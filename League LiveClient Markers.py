@@ -221,11 +221,13 @@ def writeToFile(fields, event):
         with open(EVENTPATH, 'a', newline='') as file:
             writer = csv.DictWriter(file, fieldnames = fields)
             writer.writerows(event)
+            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----'}) # divider for new games
     else:
         with open(EVENTPATH, 'w', newline='') as file:
             writer = csv.DictWriter(file, fieldnames = fields)
             writer.writeheader()
             writer.writerows(event)
+            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----'}) # divider for new games
     
     print("Wrote events to events.csv!")
     with open(LOGPATH, 'a', newline='') as log:
