@@ -17,6 +17,7 @@ LOGPATH = 'D:/Videos/League_VODs/Scripts/log.txt'
 EVENTPATH = 'D:/Videos/League_VODs/Scripts/events.csv'
 user = ''
 champ = ''
+gamemode = ''
 outputState = ''
 outputPath = ''
 
@@ -42,6 +43,7 @@ async def getPlayerInfo():
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(ALLDATA, ssl=ssl_context) as response:
+                    global gamemode
                     data = await response.json()
                     
                     username = data.get('activePlayer', {}).get('riotIdGameName')
@@ -52,9 +54,10 @@ async def getPlayerInfo():
                         raise KeyError
 
                     champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
-                    print("League username data received!", username, champion)
+                    gamemode = data.get('gameData', {}).get('gameMode')
+                    print("All league data received!", username, champion, gamemode)
                     with open(LOGPATH, 'a') as log:
-                        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: League username data received! {username} {champion}\n')
+                        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: All league data received! {username} {champion} {gamemode}\n')
                     return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             print('Error in getPlayerInfo()! League client not open!\n')
@@ -196,15 +199,17 @@ def filterEvents(eventDict, username, output, champion):
         d.pop('Assisters', None)
         d.pop('KillerName', None)
 
-    # add output, champion to events
+    # add output, champion, gamemode to events
+    global gamemode
     output = output.split("/")
     for d in sortedEvents:
         d['Champion'] = champion
         d['Filename'] = output[-1]
+        d['Gamemode'] = gamemode
     
     # change order of key value pairs
     customOrder = []
-    custom_key_order = ['Filename', 'Champion', 'EventName', 'EventTime']
+    custom_key_order = ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode']
     for d in sortedEvents:
         customSort = {k: d[k] for k in custom_key_order}
         customOrder.append(customSort)
@@ -221,13 +226,13 @@ def writeToFile(fields, event):
         with open(EVENTPATH, 'a', newline='') as file:
             writer = csv.DictWriter(file, fieldnames = fields)
             writer.writerows(event)
-            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----'}) # divider for new games
+            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}) # divider for new games
     else:
         with open(EVENTPATH, 'w', newline='') as file:
             writer = csv.DictWriter(file, fieldnames = fields)
             writer.writeheader()
             writer.writerows(event)
-            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----'}) # divider for new games
+            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}) # divider for new games
     
     print("Wrote events to events.csv!")
     with open(LOGPATH, 'a', newline='') as log:
