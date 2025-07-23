@@ -51,7 +51,7 @@ async def getPlayerInfo():
                     if username == None:
                         raise KeyError
 
-                    champion = data['allPlayers'][0]['championName']
+                    champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
                     print("League username data received!", username, champion)
                     with open(LOGPATH, 'a') as log:
                         log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: League username data received! {username} {champion}\n')
@@ -231,7 +231,7 @@ def writeToFile(fields, event):
     
     print("Wrote events to events.csv!")
     with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Wrote events to events.csv!\n-------------------')
+        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Wrote events to events.csv!\n-------------------\n\n')
 
 async def main():
     user, champ = await getPlayerInfo()
