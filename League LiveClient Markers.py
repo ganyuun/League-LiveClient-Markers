@@ -13,9 +13,10 @@ ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'
 EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 
 # initialize variables
-VODPATH = 'D:\Videos\League_VODs'
-LOGPATH = 'D:/Videos/League_VODs/Scripts/log.txt'
-EVENTPATH = 'D:/Videos/League_VODs/Scripts/events.csv'
+VODPATH = '../../.'
+LOGPATH = '../log.txt'
+EVENTPATH = '../events.csv'
+SSLPEM = 'riotgames.pem'
 user = ''
 champ = ''
 gamemode = ''
@@ -38,7 +39,7 @@ else:
 
 # custom ssl context for League API
 ssl_context = ssl.create_default_context()
-ssl_context.load_verify_locations(cafile='D:/Videos/League_VODs/Scripts/riotgames.pem')
+ssl_context.load_verify_locations(cafile=SSLPEM)
 
 # access league live client API for username & chosen champion
 # if it fails (due to connection error or the game not having loaded in yet), try 5 times before returning NA
