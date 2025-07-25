@@ -241,6 +241,7 @@ def delEvents(vodPath, eventPath):
     data = pd.read_csv(eventPath)
     filteredData = data[data['Filename'].isin(vods)]
     filteredData.to_csv(eventPath, index = False)
+    log(LOGPATH, 'a', "Deleted events that don't exist in VODs folder (if any)!")
 
 async def main():
     user, champ = await getPlayerInfo()
