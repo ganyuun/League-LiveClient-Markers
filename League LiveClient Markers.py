@@ -226,7 +226,7 @@ def writeToFile(event):
         divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
     
     print("Wrote events to events.csv!")
-    log(LOGPATH, 'a', 'Wrote events to events.csv!\n-------------------\n')
+    log(LOGPATH, 'a', 'Wrote events to events.csv!')
 
 # delete events in csv that are no longer in VOD folder
 def delEvents(vodPath, eventPath):
@@ -242,7 +242,7 @@ def delEvents(vodPath, eventPath):
     data = pd.read_csv(eventPath)
     filteredData = data[data['Filename'].isin(vods)]
     filteredData.to_csv(eventPath, index = False)
-    log(LOGPATH, 'a', "Deleted events that don't exist in VODs folder (if any)!")
+    log(LOGPATH, 'a', "Deleted events that don't exist in VODs folder (if any)!\n-------------------\n")
 
 async def main():
     user, champ = await getPlayerInfo()
