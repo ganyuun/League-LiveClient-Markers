@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, csv
+import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,10 +9,11 @@ port = 4455
 password = os.getenv("OBS_WEBSOCKET")
 
 # league api URLs
-ALLDATA = "https://127.0.0.1:2999/liveclientdata/allgamedata"
-EVENTDATA = "https://127.0.0.1:2999/liveclientdata/eventdata"
+ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'
+EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 
 # initialize variables
+VODPATH = 'D:\Videos\League_VODs'
 LOGPATH = 'D:/Videos/League_VODs/Scripts/log.txt'
 EVENTPATH = 'D:/Videos/League_VODs/Scripts/events.csv'
 user = ''
@@ -23,14 +24,17 @@ outputPath = ''
 
 cl = obs.ReqClient(host=host, port=port, password=password)
 ev = obs.EventClient(host=host, port=port, password=password)
+
+def log(path, writingMode, msg):
+    with open(path, writingMode) as log:
+        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: {msg}\n')
+
 print("OBS websocket clients created")
 
 if os.path.exists(LOGPATH):
-    with open(LOGPATH, 'a') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: OBS websocket clients created\n')
+    log(LOGPATH, 'a', 'OBS websocket clients created')
 else:
-    with open(LOGPATH, 'w') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: OBS websocket clients created\n')
+    log(LOGPATH, 'w', 'OBS websocket clients created')
 
 # custom ssl context for League API
 ssl_context = ssl.create_default_context()
@@ -56,18 +60,15 @@ async def getPlayerInfo():
                     champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
                     gamemode = data.get('gameData', {}).get('gameMode')
                     print("All league data received!", username, champion, gamemode)
-                    with open(LOGPATH, 'a') as log:
-                        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: All league data received! {username} {champion} {gamemode}\n')
+                    log(LOGPATH, 'a', f'All league data received! {username} {champion} {gamemode}')
                     return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             print('Error in getPlayerInfo()! League client not open!\n')
-            with open(LOGPATH, 'a') as log:
-                log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Error in getPlayerInfo()! League client not open!\n')
+            log(LOGPATH, 'a', 'Error in getPlayerInfo()! League client not open!')
             time.sleep(60)
         except KeyError:
             print('Error in getPlayerInfo()! Has the game loaded in yet?\n')
-            with open(LOGPATH, 'a') as log:
-                log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Error in getPlayerInfo()! Has the game loaded in yet?\n')
+            log(LOGPATH, 'a', 'Error in getPlayerInfo()! Has the game loaded in yet?')
             time.sleep(60) # if getPlayerInfo() doesn't work, getEvents() probably won't either. pause script until it goes through successfully
     
     return 'lycn', 'NA'
@@ -78,15 +79,12 @@ async def getEvents():
         async with aiohttp.ClientSession() as session:
             async with session.get(EVENTDATA, ssl=ssl_context) as response:
                 data = await response.json()
-
                 print("League event data received!")
-                with open(LOGPATH, 'a') as log:
-                    log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: League event data received!\n')
+                log(LOGPATH, 'a', 'League event data received!')
                 return data
     except aiohttp.client_exceptions.ClientConnectorError:
         print("Error in getEvents()! League client not open!\n")
-        with open(LOGPATH, 'a') as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Error in getEvents()! League client not open!\n')
+        log(LOGPATH, 'a', 'Error in getEvents()! League client not open!')
 
 # record_state_changed event handler
 def on_record_state_changed(data):
@@ -95,8 +93,7 @@ def on_record_state_changed(data):
         global outputPath
         outputState = data.output_state
         outputPath = data.output_path
-        with open('log.txt', 'a') as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Record_state_changed event handler fired! Output state is {outputState}, outputPath is {outputPath}\n')
+        log(LOGPATH, 'a', f'Record_state_changed event handler fired! Output state is {outputState}, outputPath is {outputPath}')
 
 # check if recording ended, return League events and outputPath
 async def isOBSrecording():
@@ -114,15 +111,13 @@ async def isOBSrecording():
 
         recordStatus = cl.get_record_status().output_active
         print("Is OBS recording?", recordStatus)
-        with open('log.txt', 'a') as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Is OBS recording? {recordStatus}\n')
+        log(LOGPATH, 'a', f'Is OBS recording? {recordStatus}')
        
         tempEvents = await getEvents()
         if tempEvents != None:
             events = tempEvents
 
-        with open('log.txt', 'a', newline='') as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Getting events from League API...\n\n')
+        log(LOGPATH, 'a', 'Getting events from League API...\n')
 
         await asyncio.sleep(1)
     
@@ -135,8 +130,7 @@ async def isOBSrecording():
 
 # condition data to be written into .csv     
 def filterEvents(eventDict, username, output, champion):
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: FilterEvents running! Current events: {eventDict}\n\n')
+    log(LOGPATH, 'a', f'FilterEvents running! Current events: {eventDict}\n')
 
     firstBlood = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'FirstBlood') and (username in x['Recipient'])])
     championKill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['KillerName']])
@@ -181,8 +175,7 @@ def filterEvents(eventDict, username, output, champion):
     sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
 
     print("Events filtered and sorted!")
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Events filtered and sorted! Current events: {sortedEvents}\n\n')
+    log(LOGPATH, 'a', f'Events filtered and sorted! Current events: {sortedEvents}\n')
 
     # convert 'EventTime' to min:sec, add trailing 0
     min = ''
@@ -214,29 +207,40 @@ def filterEvents(eventDict, username, output, champion):
         customSort = {k: d[k] for k in custom_key_order}
         customOrder.append(customSort)
     print("\nEvents have been conditioned:", customOrder, "\n")
-
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Events have been conditioned: {customOrder}\n\n')
+    log(LOGPATH, 'a', f'Events have been conditioned: {customOrder}\n')
 
     return custom_key_order, customOrder
 
-def writeToFile(fields, event):
+# write events to csv using pandas
+def writeToFile(event):
+    data = pd.DataFrame(event)
+    divider = {'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}
+    divider = pd.DataFrame([divider])
+    
     if os.path.exists(EVENTPATH):
-        print("Printing events to .csv...")
-        with open(EVENTPATH, 'a', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames = fields)
-            writer.writerows(event)
-            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}) # divider for new games
+        data.to_csv(EVENTPATH, index = False, header = False, mode='a')
+        divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
     else:
-        with open(EVENTPATH, 'w', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames = fields)
-            writer.writeheader()
-            writer.writerows(event)
-            writer.writerow({'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}) # divider for new games
+        data.to_csv(EVENTPATH)
+        divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
     
     print("Wrote events to events.csv!")
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: Wrote events to events.csv!\n-------------------\n\n')
+    log(LOGPATH, 'a', 'Wrote events to events.csv!\n-------------------\n')
+
+# delete events in csv that are no longer in VOD folder
+def delEvents(vodPath, eventPath):
+    # assign filenames of vods in folder to list
+    vods = []
+    for file in os.listdir(vodPath):
+        itemPath = os.path.join(vodPath, file)
+        if os.path.isfile(itemPath):
+            vods.append(file)
+    vods.append('----') # this is file divider, don't want them to be removed
+    
+    # filter csv by Filename column
+    data = pd.read_csv(eventPath)
+    filteredData = data[data['Filename'].isin(vods)]
+    filteredData.to_csv(eventPath, index = False)
 
 async def main():
     user, champ = await getPlayerInfo()
@@ -252,18 +256,16 @@ recordStatus = cl.get_record_status().output_active
 
 # if OBS is recording, run async tasks
 if (recordStatus):
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: OBS is recording! Getting player info...\n')
+    log(LOGPATH, 'a', 'OBS is recording! Getting player info...')
     fieldnames, events = asyncio.run(main())
 
     if events != 'No events':
-        writeToFile(fieldnames, events)
+        writeToFile(events)
+        delEvents(VODPATH, EVENTPATH)
     else:
         print("No events to write to .csv. Exiting...")
-        with open(LOGPATH, 'a', newline='') as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: No events to write to .csv. Exiting...\n')
+        log(LOGPATH, 'a', 'No events to write to .csv. Exiting...')
 else:
-    with open(LOGPATH, 'a', newline='') as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: OBS not recording! Exiting...\n')
     print("OBS not recording! Exiting...")
+    log(LOGPATH, 'a', 'OBS not recording! Exiting...')
     time.sleep(5)
