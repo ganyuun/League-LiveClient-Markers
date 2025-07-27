@@ -1,4 +1,4 @@
-import os, pandas as pd, datetime, math
+import os, pandas as pd, datetime, math, subprocess
 from nicegui import app, ui
 from League_LiveClient_Markers import VODPATH, EVENTPATH
 from moviepy.editor import VideoFileClip
@@ -15,7 +15,7 @@ app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 def homepage():
     with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
-            with ui.tabs().props('vertical') as tabs:
+            with ui.tabs().props('vertical').classes('w-full') as tabs:
                 vodsTab = ui.tab('VODs', icon='videocam')
                 clipsTab = ui.tab('Clips', icon='movie_creation')
         with splitter.after:
@@ -57,13 +57,12 @@ def homepage():
 def watchVOD(fileName: str):
     with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
-            with ui.tabs().props('vertical') as tabs:
-                with ui.link(target="/").classes('no-underline'):
-                    vodsTab = ui.tab('VODs', icon='videocam')
-                    clipsTab = ui.tab('Clips', icon='movie_creation')
+            with ui.tabs().props('vertical').classes('w-full'):
+                with ui.link(target="/").classes('text-white no-underline'):
+                    ui.tab('Home', icon='home')
         with splitter.after:
             path = f'/vods/{fileName}'
-            v = ui.video(path)
+            v = ui.video(path).classes('mx-3 w-full')
 
             moviepyVid = VideoFileClip(f'{VODPATH}/{fileName}')
             duration = round(moviepyVid.duration)
@@ -76,18 +75,26 @@ def watchVOD(fileName: str):
                 v.seek(minVal)
             
             def clipVideo():
+                ui.notify('Clipping video...', type='ongoing')
                 clippedVid = moviepyVid.subclip(minVal, maxVal)
-                now = datetime.datetime.now()
-                clippedVid.write_videofile(f'{CLIPPATH}/clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4')
-            
-            with ui.row().classes('w-full'):
-                ui.space()
-                ui.button('Clip', on_click = clipVideo)
 
-            clipRange = ui.range(min = 0, max = duration, value = {'min' : 0, 'max': 20}, on_change = rangeMinMax).props('label-always').classes('w-full left-3')
+                now = datetime.datetime.now()
+                clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
+
+                clippedVid.write_videofile(f'{CLIPPATH}/{clipFileName}')
+                app.add_static_file(local_file = f'{CLIPPATH}/{clipFileName}', url_path = f'/clips/{clipFileName}')
+                ui.notify('Clip has been created!', type='positive')
+                ui.navigate.to(f'/watch/clip/{clipFileName}')
             
-            ui.label().bind_text_from(clipRange, 'value', 
-                                      backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
+            with ui.expansion('Clip!', icon='movie_creation'). classes('mx-3 w-full'):
+                with ui.row().classes('w-full'):
+                    ui.space()
+                    ui.button('Clip', on_click = clipVideo)
+
+                clipRange = ui.range(min = 0, max = duration, value = {'min' : 0, 'max': 20}, on_change = rangeMinMax).props('label-always').classes('w-full')
+                
+                ui.label().bind_text_from(clipRange, 'value', 
+                                        backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
 
             events = pd.read_csv(EVENTPATH)
 
@@ -102,22 +109,38 @@ def watchVOD(fileName: str):
                 sec[0] = sec[0] * 60 # convert min to sec
                 sec[0] += sec[1] # add sec to previously converted min
                 v.seek(sec[0])
+                v.play()
 
             if fileName in events.values:
                 rows = events.loc[events['Filename'] == fileName]
-                table = ui.table.from_pandas(rows).classes('self-center')
+                table = ui.table.from_pandas(rows).classes('self-center mb-3 overflow-y-auto')
                 table.on('rowClick', handle_row_click)
 
 @ui.page('/watch/clip/{fileName}', dark = True)
 def watchClip(fileName: str):
     with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
-            with ui.tabs().props('vertical') as tabs:
-                with ui.link(target="/").classes('no-underline'):
-                    vodsTab = ui.tab('VODs', icon='videocam')
-                    clipsTab = ui.tab('Clips', icon='movie_creation')
+            with ui.tabs().props('vertical').classes('w-full'):
+                with ui.link(target="/").classes('text-white no-underline'):
+                    ui.tab('Home', icon='home')
         with splitter.after:
             path = f'/clips/{fileName}'
-            ui.video(path)
+            ui.video(path).classes('mx-3 w-full')
+
+            def highlightVideo():
+                absolutePath = f'{os.path.abspath(CLIPPATH)}\{fileName}'
+                print(path)
+
+                if os.path.exists(absolutePath):
+                    cmd = f'explorer /select,"{absolutePath}"'
+                    subprocess.run(cmd, shell=True, check=True) # ignore if it returns exit status 1
+                else:
+                    print('File not found')
+            
+            with ui.row().classes('w-full'):
+                ui.space()
+                ui.button('Open Clip in Explorer', on_click=highlightVideo)
+                ui.space()
+
 
 ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950))
