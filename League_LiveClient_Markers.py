@@ -23,20 +23,6 @@ gamemode = ''
 outputState = ''
 outputPath = ''
 
-cl = obs.ReqClient(host=host, port=port, password=password)
-ev = obs.EventClient(host=host, port=port, password=password)
-
-def log(path, writingMode, msg):
-    with open(path, writingMode) as log:
-        log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: {msg}\n')
-
-print("OBS websocket clients created")
-
-if os.path.exists(LOGPATH):
-    log(LOGPATH, 'a', 'OBS websocket clients created')
-else:
-    log(LOGPATH, 'w', 'OBS websocket clients created')
-
 # custom ssl context for League API
 ssl_context = ssl.create_default_context()
 ssl_context.load_verify_locations(cafile=SSLPEM)
@@ -254,20 +240,36 @@ async def main():
     else:
         return 'No fields', 'No events'
 
-recordStatus = cl.get_record_status().output_active
+if __name__ == '__main__':
+    cl = obs.ReqClient(host=host, port=port, password=password)
+    ev = obs.EventClient(host=host, port=port, password=password)
 
-# if OBS is recording, run async tasks
-if (recordStatus):
-    log(LOGPATH, 'a', 'OBS is recording! Getting player info...')
-    fieldnames, events = asyncio.run(main())
+    def log(path, writingMode, msg):
+        with open(path, writingMode) as log:
+            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: {msg}\n')
 
-    if events != 'No events':
-        writeToFile(events)
-        delEvents(VODPATH, EVENTPATH)
+    print("OBS websocket clients created")
+
+    if os.path.exists(LOGPATH):
+        log(LOGPATH, 'a', 'OBS websocket clients created')
     else:
-        print("No events to write to .csv. Exiting...")
-        log(LOGPATH, 'a', 'No events to write to .csv. Exiting...')
-else:
-    print("OBS not recording! Exiting...")
-    log(LOGPATH, 'a', 'OBS not recording! Exiting...')
-    time.sleep(5)
+        log(LOGPATH, 'w', 'OBS websocket clients created')
+
+    recordStatus = cl.get_record_status().output_active
+
+    # if OBS is recording, run async tasks
+    if (recordStatus):
+        log(LOGPATH, 'a', 'OBS is recording! Getting player info...')
+        fieldnames, events = asyncio.run(main())
+
+        if events != 'No events':
+            writeToFile(events)
+            delEvents(VODPATH, EVENTPATH)
+            import LiveClient_GUI
+        else:
+            print("No events to write to .csv. Exiting...")
+            log(LOGPATH, 'a', 'No events to write to .csv. Exiting...')
+    else:
+        print("OBS not recording! Exiting...")
+        log(LOGPATH, 'a', 'OBS not recording! Exiting...')
+        time.sleep(5)
