@@ -1,4 +1,6 @@
 __pycache__/
+thumbnails/*.png
+thumbnails/*.webp
 events.csv
 log.txt
 autoDel.ps1

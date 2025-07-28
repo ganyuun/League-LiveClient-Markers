@@ -7,6 +7,8 @@ CLIPPATH = '../../Clips'
 minVal = 0
 maxVal = 0
 
+app.add_media_files('/thumb', './thumbnails')
+app.add_media_files('/champIcons', 'ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
@@ -21,7 +23,15 @@ def homepage():
         with splitter.after:
             with ui.tab_panels(tabs, value = vodsTab).classes('w-full'):
                 with ui.tab_panel(vodsTab):
-                    ui.label('VODs in Folder:')
+                    ui.label('Saved VODs').classes('font-bold text-2xl')
+
+                    events = pd.read_csv(EVENTPATH)
+                    games = ui.table(columns = [{'name':'Game', 'label':'Game', 'field':'Filename', 'required': True, 'align': 'left'},
+                                                {'name': 'Icon', 'label': 'Icon', 'field': 'Icon', 'align': 'center'},
+                                                {'name': 'Champion', 'label':'Champion', 'field':'Champion', 'align': 'left'},
+                                                {'name': 'KDA', 'label':'KDA', 'field':'KDA', 'align': 'left'},
+                                                {'name': 'Gamemode', 'label':'Gamemode', 'field':'Gamemode', 'align': 'left'}], rows = []).classes('w-full mb-3 self-center overflow-y-auto')
+
                     vods = []
 
                     for file in os.listdir(VODPATH):
@@ -30,28 +40,71 @@ def homepage():
                             vods.append(file)
                     
                     vods.reverse() # vods goes by oldest to newest by default, reverse it
+
+                    for file in vods:
+                        if file in events.values:
+                            kills = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'ChampionKill')])
+                            deaths = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'Death')])
+                            assists = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'Assist')])
+
+                            kda = f'{kills}/{deaths}/{assists}'
+
+                            champion = events.loc[events['Filename'] == file, 'Champion'].tolist()
+                            champion = champion[0]
+
+                            if champion == 'MonkeyKing':
+                                champion = 'Wukong'
+
+                            iconName = champion
+
+                            gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()
+                            gamemode = gamemode[0]
+
+
+                            games.add_row({'Filename': file, 'Icon': '', 'Champion': champion, 'KDA': kda, 'Gamemode': gamemode}) 
+                        else:
+                            games.add_row({'Filename': file, 'Icon': 'No events data', 'Champion':'-', 'KDA':'-', 'Gamemode':'-'})
+                        
+                    for r, row in enumerate(games.rows):
+                        with ui.teleport(f'#{games.html_id} tr:nth-child({r+1}) td:nth-child(2)'):
+                            if row['Icon'] != 'No events data':
+                                ui.image(f'/champIcons/{row["Champion"]}.png').classes('size-8')
                     
-                    with ui.list():
-                        for file in vods:
-                            with ui.item():
-                                with ui.link(target = f'/watch/vod/{file}'):
-                                    ui.item_label(file)
+                    def handle_row_click_VODs(event):
+                        clicked_row_data = event.args[1]
+                        file = clicked_row_data['Filename']
+                        ui.navigate.to(f'/watch/vod/{file}')
+                    
+                    games.on('rowClick', handle_row_click_VODs)
+
                 with ui.tab_panel(clipsTab):
-                    ui.label('Clips in Folder:')
+                    ui.label('Saved Clips').classes('font-bold text-2xl')
+
                     clips = []
 
                     for file in os.listdir(CLIPPATH):
                         itemPath = os.path.join(CLIPPATH, file)
+
                         if os.path.isfile(itemPath):
                             clips.append(file)
+                        
+                        if os.path.exists(f'./thumbnails/{file}.webp'):
+                            continue
+                        else:
+                            clipThumbnail = VideoFileClip(os.path.join(CLIPPATH, file))
+                            clipThumbnail.save_frame(f'./thumbnails/{file}.webp', t = 1)
+                            clipThumbnail.close()
+                            app.add_static_file(local_file = f'thumbnails/{file}.webp', url_path = f'thumb/{file}.webp')
                     
                     clips.reverse() # clips go by oldest to newest by default
-                    
-                    with ui.list():
-                        for file in clips:
-                            with ui.item():
-                                with ui.link(target = f'/watch/clip/{file}'):
-                                    ui.item_label(file)
+
+                    with ui.grid(columns = 3).classes('w-full'):
+                        for vid in clips:
+                            with ui.link(target = f'/watch/clip/{vid}'):
+                                with ui.card().tight():
+                                    ui.image(f'thumb/{vid}.webp')
+                                    with ui.card_section():
+                                        ui.label(vid)
 
 @ui.page('/watch/vod/{fileName}', dark = True)
 def watchVOD(fileName: str):
@@ -82,9 +135,10 @@ def watchVOD(fileName: str):
                 clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
 
                 clippedVid.write_videofile(f'{CLIPPATH}/{clipFileName}')
+                clippedVid.close()
                 app.add_static_file(local_file = f'{CLIPPATH}/{clipFileName}', url_path = f'/clips/{clipFileName}')
-                ui.notify('Clip has been created!', type='positive')
                 ui.navigate.to(f'/watch/clip/{clipFileName}')
+                ui.notify('Clip has been created!', type='positive')
             
             with ui.expansion('Clip!', icon='movie_creation'). classes('mx-3 w-full'):
                 with ui.row().classes('w-full'):
