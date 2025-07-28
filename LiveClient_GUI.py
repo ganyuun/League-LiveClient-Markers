@@ -15,7 +15,7 @@ app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 
 @ui.page('/', dark = True)
 def homepage():
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full') as tabs:
                 vodsTab = ui.tab('VODs', icon='videocam')
@@ -100,7 +100,7 @@ def homepage():
 
 @ui.page('/watch/vod/{fileName}', dark = True)
 def watchVOD(fileName: str):
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full'):
                 with ui.link(target="/").classes('text-white no-underline'):
@@ -164,7 +164,7 @@ def watchVOD(fileName: str):
 
 @ui.page('/watch/clip/{fileName}', dark = True)
 def watchClip(fileName: str):
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full'):
                 with ui.link(target="/").classes('text-white no-underline'):
