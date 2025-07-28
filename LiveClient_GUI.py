@@ -49,17 +49,9 @@ def homepage():
 
                             kda = f'{kills}/{deaths}/{assists}'
 
-                            champion = events.loc[events['Filename'] == file, 'Champion'].tolist()
-                            champion = champion[0]
+                            champion = events.loc[events['Filename'] == file, 'Champion'].tolist()[0]
 
-                            if champion == 'MonkeyKing':
-                                champion = 'Wukong'
-
-                            iconName = champion
-
-                            gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()
-                            gamemode = gamemode[0]
-
+                            gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()[0]
 
                             games.add_row({'Filename': file, 'Icon': '', 'Champion': champion, 'KDA': kda, 'Gamemode': gamemode}) 
                         else:
