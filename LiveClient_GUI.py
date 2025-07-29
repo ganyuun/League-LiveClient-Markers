@@ -184,8 +184,31 @@ async def watchVOD(fileName: str):
 
             if fileName in events.values:
                 rows = events.loc[events['Filename'] == fileName]
-                table = ui.table.from_pandas(rows).classes('self-center mb-3 overflow-y-auto')
+
+                filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death'], 
+                                        value = ['ChampionKill', 'Multikill', 'Assist', 'Death'], multiple = True).classes('self-center').props('use-chips')
+
+                table = ui.table.from_pandas(rows, pagination=10).classes('self-center mb-3 overflow-y-auto')
                 table.on('rowClick', handle_row_click)
+
+                def applyEventFilter():
+                    selectedEvents = filterSelect.value
+
+                    rows = events.loc[events['Filename'] == fileName]
+
+                    if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death']):
+                        table.rows = rows.to_dict('records')
+                        table.update()
+                    elif selectedEvents == []:
+                        table.rows = []
+                        table.update()
+                    else:
+                        filteredRows = rows.loc[rows['EventName'].isin(selectedEvents)]
+                        table.rows = filteredRows.to_dict('records')
+                        table.update()
+                
+                filterSelect.on_value_change(applyEventFilter)
+
             
             with ui.element('div') as notify:
                 pass
