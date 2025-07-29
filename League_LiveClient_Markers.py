@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd
+import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd, logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -48,16 +48,18 @@ async def getPlayerInfo():
 
                     champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
                     gamemode = data.get('gameData', {}).get('gameMode')
+
                     print("All league data received!", username, champion, gamemode)
-                    log(LOGPATH, 'a', f'All league data received! {username} {champion} {gamemode}')
+                    logger.info('All league data received! %s %s %s', username, champion, gamemode)
+
                     return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             print('Error in getPlayerInfo()! League client not open!\n')
-            log(LOGPATH, 'a', 'Error in getPlayerInfo()! League client not open!')
+            logger.error('Error in getPlayerInfo()! League client not open!\n')
             time.sleep(60)
         except KeyError:
             print('Error in getPlayerInfo()! Has the game loaded in yet?\n')
-            log(LOGPATH, 'a', 'Error in getPlayerInfo()! Has the game loaded in yet?')
+            logger.warning('Error in getPlayerInfo()! Has the game loaded in yet?\n')
             time.sleep(60) # if getPlayerInfo() doesn't work, getEvents() probably won't either. pause script until it goes through successfully
     
     return 'lycn', 'NA'
@@ -68,12 +70,10 @@ async def getEvents():
         async with aiohttp.ClientSession() as session:
             async with session.get(EVENTDATA, ssl=ssl_context) as response:
                 data = await response.json()
-                print("League event data received!")
-                log(LOGPATH, 'a', 'League event data received!')
                 return data
     except aiohttp.client_exceptions.ClientConnectorError:
         print("Error in getEvents()! League client not open!\n")
-        log(LOGPATH, 'a', 'Error in getEvents()! League client not open!')
+        logger.error('Error in getEvents()! League client not open!')
 
 # record_state_changed event handler
 def on_record_state_changed(data):
@@ -82,7 +82,7 @@ def on_record_state_changed(data):
         global outputPath
         outputState = data.output_state
         outputPath = data.output_path
-        log(LOGPATH, 'a', f'Record_state_changed event handler fired! Output state is {outputState}, outputPath is {outputPath}')
+        logger.info('Record_state_changed event handler fired! Output state is %s, outputPath is %s', outputState, outputPath)
 
 # check if recording ended, return League events and outputPath
 async def isOBSrecording():
@@ -100,13 +100,15 @@ async def isOBSrecording():
 
         recordStatus = cl.get_record_status().output_active
         print("Is OBS recording?", recordStatus)
-        log(LOGPATH, 'a', f'Is OBS recording? {recordStatus}')
+        logger.info('Is OBS recording? %s', recordStatus)
+
+        logger.info('Getting events from League API...')
        
         tempEvents = await getEvents()
         if tempEvents != None:
+            print('League event data received!\n')
+            logger.info('League event data received!\n')
             events = tempEvents
-
-        log(LOGPATH, 'a', 'Getting events from League API...\n')
 
         await asyncio.sleep(1)
     
@@ -119,86 +121,89 @@ async def isOBSrecording():
 
 # condition data to be written into .csv     
 def filterEvents(eventDict, username, output, champion):
-    log(LOGPATH, 'a', f'FilterEvents running! Current events: {eventDict}\n')
+    try: 
+        logger.info('FilterEvents running! Current events: %s\n', eventDict)
 
-    firstBlood = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'FirstBlood') and (username in x['Recipient'])])
-    championKill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['KillerName']])
-    multikill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'Multikill') and (username in x['KillerName'])])
-    ace = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'Ace') and (username in x['Acer'])])
-    assists = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['Assisters']])
-    deaths = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and (username in x['VictimName'])])
-    
-    filteredEvents = []
+        firstBlood = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'FirstBlood') and (username in x['Recipient'])])
+        championKill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['KillerName']])
+        multikill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'Multikill') and (username in x['KillerName'])])
+        ace = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'Ace') and (username in x['Acer'])])
+        assists = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['Assisters']])
+        deaths = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and (username in x['VictimName'])])
+        
+        filteredEvents = []
 
-    if len(firstBlood) != 0:
-        firstBlood = json.loads(firstBlood)
-        filteredEvents += firstBlood
-    
-    if len(championKill) != 0:
-        championKill = json.loads(championKill)
-        filteredEvents += championKill
-    
-    if len(multikill) != 0:
-        multikill = json.loads(multikill)
-        filteredEvents += multikill
-    
-    if len(ace) != 0:
-        ace = json.loads(ace)
-        filteredEvents += ace
+        if len(firstBlood) != 0:
+            firstBlood = json.loads(firstBlood)
+            filteredEvents += firstBlood
+        
+        if len(championKill) != 0:
+            championKill = json.loads(championKill)
+            filteredEvents += championKill
+        
+        if len(multikill) != 0:
+            multikill = json.loads(multikill)
+            filteredEvents += multikill
+        
+        if len(ace) != 0:
+            ace = json.loads(ace)
+            filteredEvents += ace
 
-    if len(assists) != 0:
-        assists = json.loads(assists)
-        # update eventName for assists
-        for x in assists:
-            x.update((k, 'Assist') for k, v in x.items() if v == 'ChampionKill')
-        filteredEvents += assists
+        if len(assists) != 0:
+            assists = json.loads(assists)
+            # update eventName for assists
+            for x in assists:
+                x.update((k, 'Assist') for k, v in x.items() if v == 'ChampionKill')
+            filteredEvents += assists
 
-    if len(deaths) != 0:
-        deaths = json.loads(deaths)
-        # update eventName for deaths
-        for x in deaths:
-            x.update((k, 'Death') for k, v in x.items() if v == 'ChampionKill')
-        filteredEvents += deaths
-    
-    # sort events by EventTime
-    sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
+        if len(deaths) != 0:
+            deaths = json.loads(deaths)
+            # update eventName for deaths
+            for x in deaths:
+                x.update((k, 'Death') for k, v in x.items() if v == 'ChampionKill')
+            filteredEvents += deaths
+        
+        # sort events by EventTime
+        sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
 
-    print("Events filtered and sorted!")
-    log(LOGPATH, 'a', f'Events filtered and sorted! Current events: {sortedEvents}\n')
+        print("Events filtered and sorted!")
+        logger.info('Events filtered and sorted! Current events: %s\n', sortedEvents)
 
-    # convert 'EventTime' to min:sec, add trailing 0
-    min = ''
-    sec = ''
-    for x in sortedEvents:
-        min = math.floor(x['EventTime'] / 60)
-        sec = round(x['EventTime'] % 60, 3)
-        x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
+        # convert 'EventTime' to min:sec, add trailing 0
+        min = ''
+        sec = ''
+        for x in sortedEvents:
+            min = math.floor(x['EventTime'] / 60)
+            sec = round(x['EventTime'] % 60, 3)
+            x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
 
-    # remove unneeded keys in dictionaries
-    for d in sortedEvents:
-        d.pop('EventID')
-        d.pop('VictimName', None)
-        d.pop('Assisters', None)
-        d.pop('KillerName', None)
+        # remove unneeded keys in dictionaries
+        for d in sortedEvents:
+            d.pop('EventID')
+            d.pop('VictimName', None)
+            d.pop('Assisters', None)
+            d.pop('KillerName', None)
 
-    # add output, champion, gamemode to events
-    global gamemode
-    output = output.split("/")
-    for d in sortedEvents:
-        d['Champion'] = champion
-        d['Filename'] = output[-1]
-        d['Gamemode'] = gamemode
-    
-    # change order of key value pairs
-    customOrder = []
-    custom_key_order = ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode']
-    for d in sortedEvents:
-        customSort = {k: d[k] for k in custom_key_order}
-        customOrder.append(customSort)
-    print("\nEvents have been conditioned:", customOrder, "\n")
-    log(LOGPATH, 'a', f'Events have been conditioned: {customOrder}\n')
+        # add output, champion, gamemode to events
+        global gamemode
+        output = output.split("/")
+        for d in sortedEvents:
+            d['Champion'] = champion
+            d['Filename'] = output[-1]
+            d['Gamemode'] = gamemode
+        
+        # change order of key value pairs
+        customOrder = []
+        custom_key_order = ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode']
+        for d in sortedEvents:
+            customSort = {k: d[k] for k in custom_key_order}
+            customOrder.append(customSort)
+        print("\nEvents have been conditioned:", customOrder, "\n")
+        logger.info('Events have been conditioned: %s\n', customOrder)
 
-    return custom_key_order, customOrder
+        return custom_key_order, customOrder
+    except Exception as e:
+       logging.exception('')
 
 # write events to csv using pandas
 def writeToFile(event):
@@ -214,7 +219,7 @@ def writeToFile(event):
         divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
     
     print("Wrote events to events.csv!")
-    log(LOGPATH, 'a', 'Wrote events to events.csv!')
+    logger.info('Wrote events to events.csv!')
 
 # delete events in csv that are no longer in VOD folder
 def delEvents(vodPath, eventPath):
@@ -230,7 +235,7 @@ def delEvents(vodPath, eventPath):
     data = pd.read_csv(eventPath)
     filteredData = data[data['Filename'].isin(vods)]
     filteredData.to_csv(eventPath, index = False)
-    log(LOGPATH, 'a', "Deleted events that don't exist in VODs folder (if any)!\n-------------------\n")
+    logger.info("Deleted events that don't exist in VODs folder (if any!)\n-------------------\n")
 
 async def main():
     user, champ = await getPlayerInfo()
@@ -245,23 +250,18 @@ async def main():
 if __name__ == '__main__':
     cl = obs.ReqClient(host=host, port=port, password=password)
     ev = obs.EventClient(host=host, port=port, password=password)
+    
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(filename=LOGPATH, encoding='utf-8', format='[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
 
-    def log(path, writingMode, msg):
-        with open(path, writingMode) as log:
-            log.write(f'[{time.strftime("%H:%M:%S %p", time.localtime())}]: {msg}\n')
-
-    print("OBS websocket clients created")
-
-    if os.path.exists(LOGPATH):
-        log(LOGPATH, 'a', 'OBS websocket clients created')
-    else:
-        log(LOGPATH, 'w', 'OBS websocket clients created')
+    print('OBS websocket clients created')
+    logger.info('OBS websocket client created')
 
     recordStatus = cl.get_record_status().output_active
 
     # if OBS is recording, run async tasks
     if (recordStatus):
-        log(LOGPATH, 'a', 'OBS is recording! Getting player info...')
+        logger.info('OBS is recording! Getting player info...')
         fieldnames, events = asyncio.run(main())
 
         if events != 'No events':
@@ -270,8 +270,8 @@ if __name__ == '__main__':
             import LiveClient_GUI
         else:
             print("No events to write to .csv. Exiting...")
-            log(LOGPATH, 'a', 'No events to write to .csv. Exiting...')
+            logger.info('No events to write to .csv. Exiting...')
     else:
         print("OBS not recording! Exiting...")
-        log(LOGPATH, 'a', 'OBS not recording! Exiting...')
+        logger.info('OBS not recording! Exiting...\n-------------------\n')
         time.sleep(5)
