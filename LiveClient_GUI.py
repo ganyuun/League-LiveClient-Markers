@@ -1,9 +1,8 @@
 import os, pandas as pd, datetime, time, math, subprocess
 from nicegui import app, ui, run
-from League_LiveClient_Markers import VODPATH, EVENTPATH
+from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
 from moviepy.editor import VideoFileClip
 
-CLIPPATH = '../../Clips'
 minVal = 0
 maxVal = 0
 
