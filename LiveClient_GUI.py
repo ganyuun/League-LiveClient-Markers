@@ -59,7 +59,7 @@ async def homepage():
                                     kda = f'{kills}/{deaths}/{assists}'
 
                                     champion = events.loc[events['Filename'] == file, 'Champion'].tolist()[0]
-                                    if champion == 'MonkeyKing': champion = 'Wukong'
+                                    if champion == 'MonkeyKing' or champion == 'Monkey King': champion = 'Wukong'
 
                                     gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()[0]
 
@@ -72,6 +72,14 @@ async def homepage():
                                     if row['Icon'] != 'No events data':
                                         if row['Champion'] == 'Wukong':
                                             ui.image('/champIcons/MonkeyKing.png').classes('size-8')
+                                        # champions with spaces in their names should have them removed
+                                        elif ' ' in row['Champion']:
+                                            champ = row['Champion'].replace(' ', '')
+                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
+                                        # champions with apostrophes in their names should have them removed, and then capitalized
+                                        elif "'" in row['Champion']:
+                                            champ = row['Champion'].replace("'", '').capitalize()
+                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
                                         else:
                                             ui.image(f'/champIcons/{row["Champion"]}.png').classes('size-8')
                         
