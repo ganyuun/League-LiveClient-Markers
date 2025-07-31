@@ -267,11 +267,12 @@ if __name__ == '__main__':
         if events != 'No events':
             writeToFile(events)
             delEvents(VODPATH, EVENTPATH)
-            import LiveClient_GUI
         else:
-            print("No events to write to .csv. Exiting...")
-            logger.info('No events to write to .csv. Exiting...')
+            print("No events to write to .csv. Opening GUI...")
+            logger.info('No events to write to .csv. Opening GUI...')
     else:
-        print("OBS not recording! Exiting...")
-        logger.info('OBS not recording! Exiting...\n-------------------\n')
+        print("OBS not recording! Opening GUI...")
+        logger.info('OBS not recording! Opening GUI...\n-------------------\n')
         time.sleep(5)
+    
+    import LiveClient_GUI
