@@ -105,6 +105,9 @@ async def homepage():
                             ui.space()
 
                     def createThumbnails():
+                        if not os.path.exists('./thumbnails'):
+                            os.mkdir('./thumbnails')
+
                         for file in os.listdir(CLIPPATH):
                             itemPath = os.path.join(CLIPPATH, file)
 
@@ -125,6 +128,23 @@ async def homepage():
 
                             # add new thumbnail as static file
                             app.add_static_file(local_file=thumb_path, url_path=f'thumb/{fileName}.webp')
+                        
+                        # check if thumbnail has a corresponding clip in folder, if not, delete it
+                        for file in os.listdir('./thumbnails'):
+                            thumb_path = os.path.join('./thumbnails', file)
+
+                            if not os.path.isfile(thumb_path):
+                                continue
+
+                            clipName = os.path.splitext(file)[0]
+
+                            if os.path.exists(thumb_path) and os.path.exists(os.path.join(CLIPPATH, f'{clipName}.mkv')):
+                                continue
+                            elif os.path.exists(thumb_path) and os.path.exists(os.path.join(CLIPPATH, f'{clipName}.mp4')):
+                                continue
+                            else:
+                                print(f'Removed {thumb_path}')
+                                os.remove(thumb_path)
 
                         clips.reverse() # clips go by oldest to newest by default, reversing
 
