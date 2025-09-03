@@ -5,3 +5,8 @@ events.csv
 log.txt
 autoDel.ps1
 .env
+build/
+dist/
+*.ico
+*.exe
+*.spec

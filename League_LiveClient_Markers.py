@@ -24,19 +24,25 @@ champ = ''
 gamemode = ''
 outputState = ''
 outputPath = ''
+recordingDelay = 0
 
 # custom ssl context for League API
 ssl_context = ssl.create_default_context()
 ssl_context.load_verify_locations(cafile=SSLPEM)
 
 # access league live client API for username & chosen champion
-# if it fails (due to connection error or the game not having loaded in yet), try 5 times before returning NA
+# if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning hardcoded username, and NA
 async def getPlayerInfo():
-    for x in range(5):
+    connectorErrorCounter = 0
+    keyErrorCounter = 0
+
+    while True:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(ALLDATA, ssl=ssl_context) as response:
                     global gamemode
+                    global recordingDelay
+
                     data = await response.json()
                     
                     username = data.get('activePlayer', {}).get('riotIdGameName')
@@ -48,21 +54,29 @@ async def getPlayerInfo():
 
                     champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
                     gamemode = data.get('gameData', {}).get('gameMode')
+                    recordingDelay = round(cl.get_record_status().output_duration / 1000) - 1 # outputDuration is in milliseconds, convert to sec
 
-                    print("All league data received!", username, champion, gamemode)
-                    logger.info('All league data received! %s %s %s', username, champion, gamemode)
+                    logger.info('All League data received! %s %s %s', username, champion, gamemode)
+                    logger.info('Accounted for delay in recording due to the loading screen. It is currently %s seconds into the recording!', recordingDelay + 1)
 
                     return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             print('Error in getPlayerInfo()! League client not open!\n')
             logger.error('Error in getPlayerInfo()! League client not open!\n')
-            time.sleep(60)
+            connectorErrorCounter += 1
+            time.sleep(30)
+
+            if connectorErrorCounter == 4:
+                return 'lycn', 'NA'
         except KeyError:
-            print('Error in getPlayerInfo()! Has the game loaded in yet?\n')
-            logger.warning('Error in getPlayerInfo()! Has the game loaded in yet?\n')
-            time.sleep(60) # if getPlayerInfo() doesn't work, getEvents() probably won't either. pause script until it goes through successfully
-    
-    return 'lycn', 'NA'
+            if keyErrorCounter == 0:
+                print('Error in getPlayerInfo()! Has the game loaded in yet?\n')
+                logger.warning('Error in getPlayerInfo()! Has the game loaded in yet?\n')
+            
+            # stop the warning from being logged, since the API will be polled until all needed info is collected
+            keyErrorCounter = 1
+
+            time.sleep(1) # if getPlayerInfo() doesn't work, getEvents() probably won't either. pause the script until it goes through successfully
 
 # access events endpoint
 async def getEvents():
@@ -173,6 +187,7 @@ def filterEvents(eventDict, username, output, champion):
         min = ''
         sec = ''
         for x in sortedEvents:
+            x['EventTime'] += recordingDelay # add delay to EventTime
             min = math.floor(x['EventTime'] / 60)
             sec = round(x['EventTime'] % 60, 3)
             x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
@@ -267,6 +282,8 @@ if __name__ == '__main__':
         if events != 'No events':
             writeToFile(events)
             delEvents(VODPATH, EVENTPATH)
+            
+            import DeleteOldVideos
         else:
             print("No events to write to .csv. Opening GUI...")
             logger.info('No events to write to .csv. Opening GUI...')

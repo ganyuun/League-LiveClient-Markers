@@ -1,8 +1,9 @@
 import os, pandas as pd, datetime, time, math, subprocess
 from nicegui import app, ui, run
-from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
 from moviepy.editor import VideoFileClip
 
+from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
+FAVSPATH = '../favoritedVODs.csv'
 minVal = 0
 maxVal = 0
 
@@ -62,10 +63,15 @@ async def homepage():
                                     if champion == 'MonkeyKing' or champion == 'Monkey King': champion = 'Wukong'
 
                                     gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()[0]
+                                    
+                                    # change gamemode names from how they're referred to in the API
+                                    if gamemode == 'RUBY' or gamemode == 'RUBY_TRIAL_2': gamemode = 'DOOMBOTS'
+                                    elif gamemode == 'CLASSIC': gamemode = 'DRAFT'
+                                    elif gamemode == 'CHERRY': gamemode = 'ARENA'
 
-                                    games.add_row({'Filename': file, 'Icon': '', 'Champion': champion, 'KDA': kda, 'Gamemode': gamemode}) 
+                                    games.add_row({'Filename': file, 'Icon': '', 'Champion': champion, 'KDA': kda, 'Gamemode': gamemode})
                                 else:
-                                    games.add_row({'Filename': file, 'Icon': 'No events data', 'Champion':'-', 'KDA':'-', 'Gamemode':'-'})
+                                    games.add_row({'Filename': file, 'Icon': 'No events data', 'Champion':'-', 'KDA':'-', 'Gamemode':'-'})                                      
                             
                             for r, row in enumerate(games.rows):
                                 with ui.teleport(f'#{games.html_id} tr:nth-child({r+1}) td:nth-child(2)'):
@@ -81,8 +87,8 @@ async def homepage():
                                             champ = row['Champion'].replace("'", '').capitalize()
                                             ui.image(f'/champIcons/{champ}.png').classes('size-8')
                                         else:
-                                            ui.image(f'/champIcons/{row["Champion"]}.png').classes('size-8')
-                        
+                                            ui.image(f'/champIcons/{row["Champion"]}.png').classes('size-8')                       
+                            
                             def handle_row_click_VODs(event):
                                 clicked_row_data = event.args[1]
                                 file = clicked_row_data['Filename']
@@ -283,6 +289,5 @@ async def watchClip(fileName: str):
                 ui.space()
                 ui.button('Open Clip in Explorer', on_click=highlightVideo)
                 ui.space()
-
 
 ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
