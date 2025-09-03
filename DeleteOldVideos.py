@@ -1,6 +1,6 @@
 from League_LiveClient_Markers import VODPATH
 from LiveClient_GUI import FAVSPATH
-import send2trash, os, polars as pl
+import send2trash, os, polars as pl, time
 
 sizeLimit = 50 # 50 gb limit
 
@@ -42,11 +42,8 @@ def delOldVids():
             break
         
         send2trash.send2trash(os.path.join(VODPATH, file))
+        print(f'Deleting {file}. Folder is now {size}')
         vods.remove(file)
-
-        print(f'Folder is now {size}')
-    
-    print(vods)
 
 if __name__ == '__main__':
     if os.path.exists(FAVSPATH):
@@ -56,5 +53,7 @@ if __name__ == '__main__':
 
         size = vodFolderSize()
         if size > sizeLimit: delOldVids()
+        time.sleep(7)
     else:
         print("favoritedVODs.csv doesn't exist. Exiting...")
+        time.sleep(7)
