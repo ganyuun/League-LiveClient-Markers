@@ -3,7 +3,6 @@ from nicegui import app, ui, run
 from moviepy.editor import VideoFileClip
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
-FAVSPATH = '../favoritedVODs.csv'
 minVal = 0
 maxVal = 0
 
