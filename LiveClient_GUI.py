@@ -3,6 +3,7 @@ from nicegui import app, ui, run
 from moviepy.editor import VideoFileClip
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
+from DeleteOldVideos import FAVSPATH
 minVal = 0
 maxVal = 0
 
@@ -11,6 +12,7 @@ app.add_media_files('/champIcons', 'ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
+app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
 
 @ui.page('/')
 async def homepage():
@@ -25,29 +27,60 @@ async def homepage():
                     ui.label('Saved VODs').classes('font-bold text-2xl')
 
                     with ui.element('div').classes('w-full') as vodDiv:
-                        with ui.row():
-                            ui.space()
-                            loadingVod = ui.spinner(size='lg')
-                            ui.space()
+                        loadingVod = ui.spinner(size='lg')
                     
-                    def createVodTable():
+                    def handle_item_click_VODs(file):
+                        ui.navigate.to(f'/watch/vod/{file}')
+
+                    def handle_button_click_VODS(event, file):
+                        if os.path.exists(FAVSPATH):
+                            favVods = pd.read_csv(FAVSPATH)
+                        else:
+                            favVods = pd.DataFrame({'Name': ''})
+                            favVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+
+                        if file in favVods['Name'].tolist():
+                            filteredVods = favVods[favVods['Name'] != file]
+                            print(f"Removed {file} from favorites. FavVods is now {filteredVods['Name'].tolist()}")
+                            event.sender.props('icon=star_border')
+                            filteredVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+                        else:
+                            newFav = pd.DataFrame({'Name': [file]})
+                            favVods = pd.concat([favVods, newFav], ignore_index = True)
+                            print(f"Added {file} to favorites! FavVods is now {favVods['Name'].tolist()}")
+                            event.sender.props('icon=star')
+                            favVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+                    
+                    def createVodList():
                         events = pd.read_csv(EVENTPATH)
+                        favVods = pd.read_csv(FAVSPATH)
 
                         with vodDiv:
                             loadingVod.delete()
-                            games = ui.table(columns = [{'name':'Game', 'label':'Game', 'field':'Filename', 'required': True, 'align': 'left'},
-                                                    {'name': 'Icon', 'label': 'Icon', 'field': 'Icon', 'align': 'center'},
-                                                    {'name': 'Champion', 'label':'Champion', 'field':'Champion', 'align': 'left'},
-                                                    {'name': 'KDA', 'label':'KDA', 'field':'KDA', 'align': 'left'},
-                                                    {'name': 'Gamemode', 'label':'Gamemode', 'field':'Gamemode', 'align': 'left'}], rows = []).classes('w-full mb-3 self-center overflow-y-auto')
+                            games = ui.list().props('bordered separator')
 
+                            with games:
+                                with ui.row():
+                                    ui.item_label('Game').props('header').classes('text-bold')
+                                    ui.space()
+                                    ui.item_label('Icon').props('header').classes('text-bold')
+                                    ui.space()
+                                    ui.item_label('Champion').props('header').classes('text-bold')
+                                    ui.space()
+                                    ui.item_label('KDA').props('header').classes('text-bold')
+                                    ui.space()
+                                    ui.item_label('Gamemode').props('header').classes('text-bold')
+                                    ui.space()
+                                    ui.item_label('Favorite').props('header').classes('text-bold')
+                                ui.separator()
+                            
                             vods = []
 
                             for file in os.listdir(VODPATH):
                                 itemPath = os.path.join(VODPATH, file)
                                 if os.path.isfile(itemPath):
                                     vods.append(file)
-                        
+                            
                             vods.reverse() # vods goes by oldest to newest by default, reverse it
 
                             for file in vods:
@@ -68,34 +101,54 @@ async def homepage():
                                     elif gamemode == 'CLASSIC': gamemode = 'DRAFT'
                                     elif gamemode == 'CHERRY': gamemode = 'ARENA'
 
-                                    games.add_row({'Filename': file, 'Icon': '', 'Champion': champion, 'KDA': kda, 'Gamemode': gamemode})
+                                    with games:
+                                        with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
+                                            with ui.item_section():
+                                                ui.item_label(file)
+                                            with ui.item_section():
+                                                if champion == 'Wukong':
+                                                    ui.image('/champIcons/MonkeyKing.png').classes('size-8')
+                                                # remove spaces from champion names
+                                                elif ' ' in champion:
+                                                    champ = champion.replace(' ', '')
+                                                    ui.image(f'/champIcons/{champ}.png').classes('size-8')
+                                                # champions with apostrophes in their names should have them removed, and then capitalized
+                                                elif "'" in champion:
+                                                    champ = champion.replace("'", '').capitalize()
+                                                    ui.image(f'/champIcons/{champ}.png').classes('size-8')
+                                                else:
+                                                    ui.image(f'/champIcons/{champion}.png').classes('size-8')
+                                            with ui.item_section():
+                                                ui.item_label(champion)
+                                            with ui.item_section():
+                                                ui.item_label(kda)
+                                            with ui.item_section():
+                                                ui.item_label(gamemode)
+                                            with ui.item_section().props('side'):
+                                                if file not in favVods.values:
+                                                    ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                else:
+                                                    ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
                                 else:
-                                    games.add_row({'Filename': file, 'Icon': 'No events data', 'Champion':'-', 'KDA':'-', 'Gamemode':'-'})                                      
-                            
-                            for r, row in enumerate(games.rows):
-                                with ui.teleport(f'#{games.html_id} tr:nth-child({r+1}) td:nth-child(2)'):
-                                    if row['Icon'] != 'No events data':
-                                        if row['Champion'] == 'Wukong':
-                                            ui.image('/champIcons/MonkeyKing.png').classes('size-8')
-                                        # champions with spaces in their names should have them removed
-                                        elif ' ' in row['Champion']:
-                                            champ = row['Champion'].replace(' ', '')
-                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
-                                        # champions with apostrophes in their names should have them removed, and then capitalized
-                                        elif "'" in row['Champion']:
-                                            champ = row['Champion'].replace("'", '').capitalize()
-                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
-                                        else:
-                                            ui.image(f'/champIcons/{row["Champion"]}.png').classes('size-8')                       
-                            
-                            def handle_row_click_VODs(event):
-                                clicked_row_data = event.args[1]
-                                file = clicked_row_data['Filename']
-                                ui.navigate.to(f'/watch/vod/{file}')
-                            
-                            games.on('rowClick', handle_row_click_VODs)
-
-                    await run.io_bound(createVodTable)
+                                    with games:
+                                        with ui.item().on_click(handle_item_click_VODs):
+                                            with ui.item_section():
+                                                ui.item_label(file)
+                                            with ui.item_section():
+                                                ui.item_label('No events data')
+                                            with ui.item_section():
+                                                ui.item_label('-')
+                                            with ui.item_section():
+                                                ui.item_label('-')
+                                            with ui.item_section():
+                                                ui.item_label('-')
+                                            with ui.item_section().props('side'):
+                                                if file not in favVods.values:
+                                                    ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                else:
+                                                    ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                    
+                    await run.io_bound(createVodList)
 
                 with ui.tab_panel(clipsTab):
                     ui.label('Saved Clips').classes('font-bold text-2xl')
@@ -289,4 +342,5 @@ async def watchClip(fileName: str):
                 ui.button('Open Clip in Explorer', on_click=highlightVideo)
                 ui.space()
 
+app.native.window_args['min_size'] = (1200, 650)
 ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)

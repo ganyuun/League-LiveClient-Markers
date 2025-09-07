@@ -54,17 +54,17 @@ async def getPlayerInfo():
 
                     champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
                     gamemode = data.get('gameData', {}).get('gameMode')
-                    recordingDelay = round(cl.get_record_status().output_duration / 1000) - 1 # outputDuration is in milliseconds, convert to sec
+                    recordingDelay = (cl.get_record_status().output_duration / 1000) - 1 # outputDuration is in milliseconds, convert to sec
 
                     logger.info('All League data received! %s %s %s', username, champion, gamemode)
-                    logger.info('Accounted for delay in recording due to the loading screen. It is currently %s seconds into the recording!', recordingDelay + 1)
+                    logger.info('Accounted for delay in recording due to the loading screen. It is currently %s seconds into the recording!\n', recordingDelay + 1)
 
                     return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             print('Error in getPlayerInfo()! League client not open!\n')
             logger.error('Error in getPlayerInfo()! League client not open!\n')
             connectorErrorCounter += 1
-            time.sleep(30)
+            time.sleep(15)
 
             if connectorErrorCounter == 4:
                 return 'lycn', 'NA'
