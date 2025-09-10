@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd, logging
+import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,49 +33,48 @@ ssl_context.load_verify_locations(cafile=SSLPEM)
 # access league live client API for username & chosen champion
 # if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning hardcoded username, and NA
 async def getPlayerInfo():
+    global gamemode
+    global recordingDelay
     connectorErrorCounter = 0
-    keyErrorCounter = 0
 
     while True:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(ALLDATA, ssl=ssl_context) as response:
-                    global gamemode
-                    global recordingDelay
-
                     data = await response.json()
                     
                     username = data.get('activePlayer', {}).get('riotIdGameName')
+                    events = data.get('events', {}).get('Events', [])
 
-                    # if getPlayerInfo() runs during League's loading screen, the script may get a KeyError
-                    # so raise an error to prevent the script from crashing
-                    if username == None:
+                    # if getPlayerInfo() runs during League's loading screen, the script may get a KeyError, so raise an error to prevent the script from crashing
+                    # prevent the function from continuing if there's no events either, since the loading screen ending is signified by a 'GameStart' event
+                    if username == None or len(events) == 0:
+                        logger.info('getPlayerInfo() conditions not satisfied. Username = %s, and events = %s', username, events)
                         raise KeyError
+                    else:
+                        champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
+                        gamemode = data.get('gameData', {}).get('gameMode')
 
-                    champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
-                    gamemode = data.get('gameData', {}).get('gameMode')
-                    recordingDelay = (cl.get_record_status().output_duration / 1000) - 1 # outputDuration is in milliseconds, convert to sec
+                        if len(events) <= 2:
+                            recordingDelay = (cl.get_record_status().output_duration / 1000) - 2 # outputDuration is in milliseconds, convert to sec
+                            logger.info('Accounted for delay in recording due to the loading screen. It is currently %s seconds into the recording!', recordingDelay + 2)
+                        else:
+                            # if there are more than two events already available in the API (one of them should be GameStart), it's most likely that we're rejoining a game, so don't account for any delay
+                            recordingDelay = 0
+                            logger.info("More than two events detected, recording delay wasn't calculated.\n")
 
-                    logger.info('All League data received! %s %s %s', username, champion, gamemode)
-                    logger.info('Accounted for delay in recording due to the loading screen. It is currently %s seconds into the recording!\n', recordingDelay + 1)
-
-                    return username, champion
+                        logger.info('All League data received! %s %s %s\n', username, champion, gamemode)
+                        return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
-            print('Error in getPlayerInfo()! League client not open!\n')
-            logger.error('Error in getPlayerInfo()! League client not open!\n')
+            logger.error('Error in getPlayerInfo()! League client not open!')
             connectorErrorCounter += 1
-            time.sleep(15)
-
+            
             if connectorErrorCounter == 4:
                 return 'lycn', 'NA'
-        except KeyError:
-            if keyErrorCounter == 0:
-                print('Error in getPlayerInfo()! Has the game loaded in yet?\n')
-                logger.warning('Error in getPlayerInfo()! Has the game loaded in yet?\n')
             
-            # stop the warning from being logged, since the API will be polled until all needed info is collected
-            keyErrorCounter = 1
-
+            time.sleep(10)
+        except KeyError:
+            logger.warning('Error in getPlayerInfo()! Has the game loaded in yet?')
             time.sleep(1) # if getPlayerInfo() doesn't work, getEvents() probably won't either. pause the script until it goes through successfully
 
 # access events endpoint
@@ -86,7 +85,6 @@ async def getEvents():
                 data = await response.json()
                 return data
     except aiohttp.client_exceptions.ClientConnectorError:
-        print("Error in getEvents()! League client not open!\n")
         logger.error('Error in getEvents()! League client not open!')
 
 # record_state_changed event handler
@@ -100,6 +98,8 @@ def on_record_state_changed(data):
 
 # check if recording ended, return League events and outputPath
 async def isOBSrecording():
+    logOnlyOnce = 0
+
     events = {}
     tempEvents = {} # temporary, local variable
     recordStatus = cl.get_record_status().output_active
@@ -108,22 +108,23 @@ async def isOBSrecording():
     
     while recordStatus == True:
         if outputState == 'OBS_WEBSOCKET_OUTPUT_STOPPED':
-            print("Recording stopped!")
+            logger.info("Recording stopped!\n")
             recordStatus = False
             break
 
         recordStatus = cl.get_record_status().output_active
-        print("Is OBS recording?", recordStatus)
-        logger.info('Is OBS recording? %s', recordStatus)
 
-        logger.info('Getting events from League API...')
+        if logOnlyOnce == 0:
+            logger.info('Is OBS recording? %s', recordStatus)
+            logger.info('Getting events from League API every second...')
        
         tempEvents = await getEvents()
         if tempEvents != None:
-            print('League event data received!\n')
-            logger.info('League event data received!\n')
+            if logOnlyOnce == 0:
+                logger.info('League event data received!\n')
             events = tempEvents
 
+        logOnlyOnce = 1
         await asyncio.sleep(1)
     
     ev.callback.deregister(on_record_state_changed)
@@ -136,7 +137,7 @@ async def isOBSrecording():
 # condition data to be written into .csv     
 def filterEvents(eventDict, username, output, champion):
     try: 
-        logger.info('FilterEvents running! Current events: %s\n', eventDict)
+        logger.info('FilterEvents running! Preview of current events: %s, %s, %s\n', eventDict.get('Events', [])[0], eventDict.get('Events', [])[1], eventDict.get('Events', [])[2])
 
         firstBlood = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'FirstBlood') and (username in x['Recipient'])])
         championKill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['KillerName']])
@@ -180,8 +181,7 @@ def filterEvents(eventDict, username, output, champion):
         # sort events by EventTime
         sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
 
-        print("Events filtered and sorted!")
-        logger.info('Events filtered and sorted! Current events: %s\n', sortedEvents)
+        logger.info('Events filtered and sorted! Preview of current events: %s, %s, %s\n', sortedEvents[0], sortedEvents[1], sortedEvents[2])
 
         # convert 'EventTime' to min:sec, add trailing 0
         min = ''
@@ -213,8 +213,7 @@ def filterEvents(eventDict, username, output, champion):
         for d in sortedEvents:
             customSort = {k: d[k] for k in custom_key_order}
             customOrder.append(customSort)
-        print("\nEvents have been conditioned:", customOrder, "\n")
-        logger.info('Events have been conditioned: %s\n', customOrder)
+        logger.info('Events have been conditioned. Preview: %s, %s, %s\n', customOrder[0], customOrder[1], customOrder[2])
 
         return custom_key_order, customOrder
     except Exception as e:
@@ -233,7 +232,6 @@ def writeToFile(event):
         data.to_csv(EVENTPATH)
         divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
     
-    print("Wrote events to events.csv!")
     logger.info('Wrote events to events.csv!')
 
 # delete events in csv that are no longer in VOD folder
@@ -263,13 +261,26 @@ async def main():
         return 'No fields', 'No events'
 
 if __name__ == '__main__':
+    import logging
+
     cl = obs.ReqClient(host=host, port=port, password=password)
     ev = obs.EventClient(host=host, port=port, password=password)
     
     logger = logging.getLogger(__name__)
-    logging.basicConfig(filename=LOGPATH, encoding='utf-8', format='[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
+    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    ch = logging.StreamHandler()
 
-    print('OBS websocket clients created')
+    logger.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+
     logger.info('OBS websocket client created')
 
     recordStatus = cl.get_record_status().output_active
@@ -282,14 +293,11 @@ if __name__ == '__main__':
         if events != 'No events':
             writeToFile(events)
             delEvents(VODPATH, EVENTPATH)
-            
-            import DeleteOldVideos
         else:
-            print("No events to write to .csv. Opening GUI...")
             logger.info('No events to write to .csv. Opening GUI...')
     else:
-        print("OBS not recording! Opening GUI...")
         logger.info('OBS not recording! Opening GUI...\n-------------------\n')
         time.sleep(5)
     
+    import DeleteOldVideos
     import LiveClient_GUI

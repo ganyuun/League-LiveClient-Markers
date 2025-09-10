@@ -342,5 +342,6 @@ async def watchClip(fileName: str):
                 ui.button('Open Clip in Explorer', on_click=highlightVideo)
                 ui.space()
 
-app.native.window_args['min_size'] = (1200, 650)
-ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
+if __name__ == '__main__':
+    app.native.window_args['min_size'] = (1200, 650)
+    ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
