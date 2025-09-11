@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, pandas as pd
+import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, polars as pl
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -137,7 +137,8 @@ async def isOBSrecording():
 # condition data to be written into .csv     
 def filterEvents(eventDict, username, output, champion):
     try: 
-        logger.info('FilterEvents running! Preview of current events: %s, %s, %s\n', eventDict.get('Events', [])[0], eventDict.get('Events', [])[1], eventDict.get('Events', [])[2])
+        if len(eventDict.get('Events', [])) >= 3: logger.info('FilterEvents running! Preview of current events: %s, %s, %s\n', eventDict.get('Events', [])[0], eventDict.get('Events', [])[1], eventDict.get('Events', [])[2])
+        else: logger.info('FilterEvents running!')
 
         firstBlood = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'FirstBlood') and (username in x['Recipient'])])
         championKill = json.dumps([x for x in eventDict.get('Events', []) if (x['EventName'] == 'ChampionKill') and username in x['KillerName']])
@@ -181,7 +182,8 @@ def filterEvents(eventDict, username, output, champion):
         # sort events by EventTime
         sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
 
-        logger.info('Events filtered and sorted! Preview of current events: %s, %s, %s\n', sortedEvents[0], sortedEvents[1], sortedEvents[2])
+        if len(sortedEvents) >= 3: logger.info('Events filtered and sorted! Preview of current events: %s, %s, %s\n', sortedEvents[0], sortedEvents[1], sortedEvents[2])
+        else: logger.info('Events filtered and sorted!')
 
         # convert 'EventTime' to min:sec, add trailing 0
         min = ''
@@ -213,7 +215,9 @@ def filterEvents(eventDict, username, output, champion):
         for d in sortedEvents:
             customSort = {k: d[k] for k in custom_key_order}
             customOrder.append(customSort)
-        logger.info('Events have been conditioned. Preview: %s, %s, %s\n', customOrder[0], customOrder[1], customOrder[2])
+        
+        if len(customOrder) >= 3: logger.info('Events have been conditioned. Preview: %s, %s, %s\n', customOrder[0], customOrder[1], customOrder[2])
+        else: logger.info('Events have been conditioned.')
 
         return custom_key_order, customOrder
     except Exception as e:
@@ -221,16 +225,14 @@ def filterEvents(eventDict, username, output, champion):
 
 # write events to csv using pandas
 def writeToFile(event):
-    data = pd.DataFrame(event)
-    divider = {'Filename': '----', 'Champion': '----', 'EventName': '----', 'EventTime': '----', 'Gamemode': '----'}
-    divider = pd.DataFrame([divider])
+    data = pl.DataFrame(event)
     
     if os.path.exists(EVENTPATH):
-        data.to_csv(EVENTPATH, index = False, header = False, mode='a')
-        divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
+        with open(EVENTPATH, mode = 'a', encoding = "utf8") as f:
+            data.write_csv(f, include_header = False)
     else:
-        data.to_csv(EVENTPATH)
-        divider.to_csv(EVENTPATH, index = False, header = False, mode='a')
+        with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
+            data.write_csv(f, include_header = True)
     
     logger.info('Wrote events to events.csv!')
 
@@ -245,9 +247,12 @@ def delEvents(vodPath, eventPath):
     vods.append('----') # this is file divider, don't want them to be removed
     
     # filter csv by Filename column
-    data = pd.read_csv(eventPath)
-    filteredData = data[data['Filename'].isin(vods)]
-    filteredData.to_csv(eventPath, index = False)
+    data = pl.read_csv(eventPath)
+    filteredData = data.filter(pl.col('Filename').is_in(vods))
+
+    with open(eventPath, mode = 'w', encoding = 'utf8') as f:
+        filteredData.write_csv(f, include_header = True)
+
     logger.info("Deleted events that don't exist in VODs folder (if any!)\n-------------------\n")
 
 async def main():

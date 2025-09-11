@@ -1,4 +1,4 @@
-import os, pandas as pd, datetime, time, math, subprocess
+import os, polars as pl, datetime, time, math, subprocess
 from nicegui import app, ui, run
 from moviepy.editor import VideoFileClip
 
@@ -34,26 +34,31 @@ async def homepage():
 
                     def handle_button_click_VODS(event, file):
                         if os.path.exists(FAVSPATH):
-                            favVods = pd.read_csv(FAVSPATH)
+                            favVods = pl.read_csv(FAVSPATH)
                         else:
-                            favVods = pd.DataFrame({'Name': ''})
-                            favVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+                                favVods = pl.DataFrame({'Name': ''})
+                                favVods.write_csv(f, include_header = True)
 
-                        if file in favVods['Name'].tolist():
-                            filteredVods = favVods[favVods['Name'] != file]
-                            print(f"Removed {file} from favorites. FavVods is now {filteredVods['Name'].tolist()}")
+                        if file in favVods['Name'].to_list():
+                            filteredVods = favVods.filter(pl.col('Name') != file)
+                            print(f"Removed {file} from favorites. FavVods is now {filteredVods['Name'].to_list()}")
                             event.sender.props('icon=star_border')
-                            filteredVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+
+                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+                                filteredVods.write_csv(f, include_header = True)
                         else:
-                            newFav = pd.DataFrame({'Name': [file]})
-                            favVods = pd.concat([favVods, newFav], ignore_index = True)
-                            print(f"Added {file} to favorites! FavVods is now {favVods['Name'].tolist()}")
+                            newFav = pl.DataFrame({'Name': [file]})
+                            favVods = pl.concat([favVods, newFav])
+                            print(f"Added {file} to favorites! FavVods is now {favVods['Name'].to_list()}")
                             event.sender.props('icon=star')
-                            favVods.to_csv(FAVSPATH, header = True, index = False, mode='w')
+
+                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+                                favVods.write_csv(f, include_header = True)
                     
                     def createVodList():
-                        events = pd.read_csv(EVENTPATH)
-                        favVods = pd.read_csv(FAVSPATH)
+                        events = pl.read_csv(EVENTPATH)
+                        favVods = pl.read_csv(FAVSPATH)
 
                         with vodDiv:
                             loadingVod.delete()
@@ -84,20 +89,23 @@ async def homepage():
                             vods.reverse() # vods goes by oldest to newest by default, reverse it
 
                             for file in vods:
-                                if file in events.values:
-                                    kills = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'ChampionKill')])
-                                    deaths = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'Death')])
-                                    assists = len(events.loc[(events['Filename'] == file) & (events['EventName'] == 'Assist')])
+                                # if file in events.values:
+                                if file in pl.Series(events['Filename'].unique()).to_list():
+                                    kills = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['ChampionKill'])))
+                                    deaths = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['Death'])))
+                                    assists = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['Assist'])))
 
                                     kda = f'{kills}/{deaths}/{assists}'
 
-                                    champion = events.loc[events['Filename'] == file, 'Champion'].tolist()[0]
+                                    champion = pl.Series(events.filter(pl.col('Filename').is_in([file])).select('Champion')).to_list()[0]
                                     if champion == 'MonkeyKing' or champion == 'Monkey King': champion = 'Wukong'
 
-                                    gamemode = events.loc[events['Filename'] == file, 'Gamemode'].tolist()[0]
+                                    gamemode = pl.Series(events.filter(pl.col('Filename').is_in([file])).select('Gamemode')).to_list()[0]
                                     
                                     # change gamemode names from how they're referred to in the API
-                                    if gamemode == 'RUBY' or gamemode == 'RUBY_TRIAL_2': gamemode = 'DOOMBOTS'
+                                    if gamemode == 'RUBY': gamemode = 'DOOMBOTS'
+                                    elif gamemode == 'RUBY_TRIAL_1': gamemode = "VEIGAR'S CURSE"
+                                    elif gamemode == 'RUBY_TRIAL_2': gamemode = "VEIGAR'S EVIL"
                                     elif gamemode == 'CLASSIC': gamemode = 'DRAFT'
                                     elif gamemode == 'CHERRY': gamemode = 'ARENA'
 
@@ -125,7 +133,8 @@ async def homepage():
                                             with ui.item_section():
                                                 ui.item_label(gamemode)
                                             with ui.item_section().props('side'):
-                                                if file not in favVods.values:
+                                                # if file not in favVods.values:
+                                                if file not in pl.Series(favVods['Name']).to_list():
                                                     ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
                                                 else:
                                                     ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -143,7 +152,8 @@ async def homepage():
                                             with ui.item_section():
                                                 ui.item_label('-')
                                             with ui.item_section().props('side'):
-                                                if file not in favVods.values:
+                                                # if file not in favVods.values:
+                                                if file not in pl.Series(favVods['Name']).to_list():
                                                     ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
                                                 else:
                                                     ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -253,7 +263,7 @@ async def watchVOD(fileName: str):
                 ui.label().bind_text_from(clipRange, 'value', 
                                         backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
 
-            events = pd.read_csv(EVENTPATH)
+            events = pl.read_csv(EVENTPATH)
 
             def handle_row_click(event):
                 clicked_row_data = event.args[1]
@@ -268,19 +278,19 @@ async def watchVOD(fileName: str):
                 v.seek(sec[0])
                 v.play()
 
-            if fileName in events.values:
-                rows = events.loc[events['Filename'] == fileName]
+            if fileName in pl.Series(events['Filename'].unique()).to_list():
+                rows = events.filter(pl.col('Filename').is_in([fileName]))
 
                 filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death'], 
                                         value = ['ChampionKill', 'Multikill', 'Assist', 'Death'], multiple = True).classes('self-center').props('use-chips')
 
-                table = ui.table.from_pandas(rows, pagination=10).classes('self-center mb-3 overflow-y-auto')
+                table = ui.table.from_polars(rows, pagination=10).classes('self-center mb-3 overflow-y-auto')
                 table.on('rowClick', handle_row_click)
 
                 def applyEventFilter():
                     selectedEvents = filterSelect.value
 
-                    rows = events.loc[events['Filename'] == fileName]
+                    rows = events.filter(pl.col('Filename').is_in([fileName]))
 
                     if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death']):
                         table.rows = rows.to_dict('records')
@@ -289,7 +299,7 @@ async def watchVOD(fileName: str):
                         table.rows = []
                         table.update()
                     else:
-                        filteredRows = rows.loc[rows['EventName'].isin(selectedEvents)]
+                        filteredRows = rows.filter(pl.col(['EventName']).is_in(selectedEvents))
                         table.rows = filteredRows.to_dict('records')
                         table.update()
                 
@@ -342,6 +352,5 @@ async def watchClip(fileName: str):
                 ui.button('Open Clip in Explorer', on_click=highlightVideo)
                 ui.space()
 
-if __name__ == '__main__':
-    app.native.window_args['min_size'] = (1200, 650)
-    ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
+app.native.window_args['min_size'] = (1200, 650)
+ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
