@@ -4,6 +4,10 @@ import send2trash, os, polars as pl, time
 FAVSPATH = '../favoritedVODs.csv'
 sizeLimit = 50 # 50 gb limit
 
+def delSpecificVid(fileName):
+    if os.path.exists(os.path.join(VODPATH, fileName)):
+        send2trash.send2trash(os.path.join(VODPATH, fileName))
+
 def vodFolderSize():
     folderSize = 0
 

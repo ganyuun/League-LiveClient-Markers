@@ -3,7 +3,7 @@ from nicegui import app, ui, run
 from moviepy.editor import VideoFileClip
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
-from DeleteOldVideos import FAVSPATH
+from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
 
@@ -55,7 +55,26 @@ async def homepage():
 
                             with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
                                 favVods.write_csv(f, include_header = True)
-                    
+                        
+                    def handle_del_button_VODS(file):
+                        with ui.dialog() as dialog, ui.card():
+                            def delVod(file):
+                                if os.path.exists(os.path.join(VODPATH, file)):
+                                    ui.notify(f'{file} sent to recycling bin.', type = 'positive')
+                                    delSpecificVid(file)
+                                    dialog.close()
+                                    time.sleep(2)
+                                    ui.navigate.to('/')
+                                else:
+                                    ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
+
+                            ui.label(f'Are you sure you want to delete {file}?')
+                            with ui.row().classes('self-center'):
+                                ui.button('Yes', color = 'red', on_click = lambda: delVod(file))
+                                ui.space()
+                                ui.button('No', on_click = dialog.close)
+                        dialog.open()
+
                     def createVodList():
                         events = pl.read_csv(EVENTPATH)
                         favVods = pl.read_csv(FAVSPATH)
@@ -76,7 +95,7 @@ async def homepage():
                                     ui.space()
                                     ui.item_label('Gamemode').props('header').classes('text-bold')
                                     ui.space()
-                                    ui.item_label('Favorite').props('header').classes('text-bold')
+                                    ui.item_label('Actions').props('header').classes('text-bold')
                                 ui.separator()
                             
                             vods = []
@@ -134,10 +153,13 @@ async def homepage():
                                                 ui.item_label(gamemode)
                                             with ui.item_section().props('side'):
                                                 # if file not in favVods.values:
-                                                if file not in pl.Series(favVods['Name']).to_list():
-                                                    ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                else:
-                                                    ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                with ui.row():
+                                                    if file not in pl.Series(favVods['Name']).to_list():
+                                                        ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                    else:
+                                                        ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                    
+                                                    ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
                                 else:
                                     with games:
                                         with ui.item().on_click(handle_item_click_VODs):
@@ -153,10 +175,13 @@ async def homepage():
                                                 ui.item_label('-')
                                             with ui.item_section().props('side'):
                                                 # if file not in favVods.values:
-                                                if file not in pl.Series(favVods['Name']).to_list():
-                                                    ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                else:
-                                                    ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                with ui.row():
+                                                    if file not in pl.Series(favVods['Name']).to_list():
+                                                        ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                    else:
+                                                        ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                    
+                                                    ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
                     
                     await run.io_bound(createVodList)
 
