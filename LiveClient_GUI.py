@@ -293,19 +293,17 @@ async def watchVOD(fileName: str):
                     rows = events.filter(pl.col('Filename').is_in([fileName]))
 
                     if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death']):
-                        table.rows = rows.to_dict('records')
+                        table.rows = rows.to_dicts()
                         table.update()
                     elif selectedEvents == []:
                         table.rows = []
                         table.update()
                     else:
-                        filteredRows = rows.filter(pl.col(['EventName']).is_in(selectedEvents))
-                        table.rows = filteredRows.to_dict('records')
+                        table.rows = rows.filter(pl.col(['EventName']).is_in(selectedEvents)).to_dicts()
                         table.update()
                 
                 filterSelect.on_value_change(applyEventFilter)
 
-            
             with ui.element('div') as notify:
                 pass
 
