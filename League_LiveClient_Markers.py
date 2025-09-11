@@ -1,5 +1,6 @@
 import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, polars as pl
 from dotenv import load_dotenv
+from pynput import keyboard
 
 load_dotenv()
 
@@ -25,10 +26,21 @@ gamemode = ''
 outputState = ''
 outputPath = ''
 recordingDelay = 0
+customMarkers = []
 
 # custom ssl context for League API
 ssl_context = ssl.create_default_context()
 ssl_context.load_verify_locations(cafile=SSLPEM)
+
+# hotkey for custom event marker
+def customMarker():
+    global customMarkers
+    logger.info('Hotkey pressed!')
+    currentRecordingTime = cl.get_record_status().output_duration / 1000
+    customMarkers.append({'EventName': 'Custom', 'EventTime': currentRecordingTime})
+    logger.info('Current time in recording is %s. customMarkers = %s', currentRecordingTime, customMarkers)
+
+listener = keyboard.GlobalHotKeys({'<ctrl>+<F1>': customMarker})
 
 # access league live client API for username & chosen champion
 # if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning hardcoded username, and NA
@@ -178,6 +190,11 @@ def filterEvents(eventDict, username, output, champion):
             for x in deaths:
                 x.update((k, 'Death') for k, v in x.items() if v == 'ChampionKill')
             filteredEvents += deaths
+
+        global customMarkers
+
+        if len(customMarkers) != 0:
+            filteredEvents += customMarkers
         
         # sort events by EventTime
         sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
@@ -189,14 +206,15 @@ def filterEvents(eventDict, username, output, champion):
         min = ''
         sec = ''
         for x in sortedEvents:
-            x['EventTime'] += recordingDelay # add delay to EventTime
-            min = math.floor(x['EventTime'] / 60)
-            sec = round(x['EventTime'] % 60, 3)
-            x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
+            if x['EventTime'] != 'Custom':
+                x['EventTime'] += recordingDelay # add delay to EventTime
+                min = math.floor(x['EventTime'] / 60)
+                sec = round(x['EventTime'] % 60, 3)
+                x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
 
         # remove unneeded keys in dictionaries
         for d in sortedEvents:
-            d.pop('EventID')
+            d.pop('EventID', None)
             d.pop('VictimName', None)
             d.pop('Assisters', None)
             d.pop('KillerName', None)
@@ -293,6 +311,7 @@ if __name__ == '__main__':
     # if OBS is recording, run async tasks
     if (recordStatus):
         logger.info('OBS is recording! Getting player info...')
+        listener.start()
         fieldnames, events = asyncio.run(main())
 
         if events != 'No events':

@@ -281,8 +281,8 @@ async def watchVOD(fileName: str):
             if fileName in pl.Series(events['Filename'].unique()).to_list():
                 rows = events.filter(pl.col('Filename').is_in([fileName]))
 
-                filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death'], 
-                                        value = ['ChampionKill', 'Multikill', 'Assist', 'Death'], multiple = True).classes('self-center').props('use-chips')
+                filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], 
+                                        value = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], multiple = True).classes('self-center').props('use-chips')
 
                 table = ui.table.from_polars(rows, pagination=10).classes('self-center mb-3 overflow-y-auto')
                 table.on('rowClick', handle_row_click)
@@ -292,7 +292,7 @@ async def watchVOD(fileName: str):
 
                     rows = events.filter(pl.col('Filename').is_in([fileName]))
 
-                    if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death']):
+                    if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom']):
                         table.rows = rows.to_dicts()
                         table.update()
                     elif selectedEvents == []:
