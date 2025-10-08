@@ -33,15 +33,11 @@ async def homepage():
                         ui.navigate.to(f'/watch/vod/{file}')
 
                     def handle_button_click_VODS(event, file):
-                        if os.path.exists(FAVSPATH):
-                            favVods = pl.read_csv(FAVSPATH)
-                        else:
-                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-                                favVods = pl.DataFrame({'Name': ''})
-                                favVods.write_csv(f, include_header = True)
+                        favVods = pl.read_csv(FAVSPATH)
 
                         if file in favVods['Name'].to_list():
                             filteredVods = favVods.filter(pl.col('Name') != file)
+                            filteredVods = filteredVods.sort('Name', descending = True)
                             print(f"Removed {file} from favorites. FavVods is now {filteredVods['Name'].to_list()}")
                             event.sender.props('icon=star_border')
 
@@ -50,6 +46,7 @@ async def homepage():
                         else:
                             newFav = pl.DataFrame({'Name': [file]})
                             favVods = pl.concat([favVods, newFav])
+                            favVods = favVods.sort('Name', descending = True)
                             print(f"Added {file} to favorites! FavVods is now {favVods['Name'].to_list()}")
                             event.sender.props('icon=star')
 
@@ -77,7 +74,12 @@ async def homepage():
 
                     def createVodList():
                         events = pl.read_csv(EVENTPATH)
-                        favVods = pl.read_csv(FAVSPATH)
+
+                        if os.path.exists(FAVSPATH): favVods = pl.read_csv(FAVSPATH)
+                        else:
+                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+                                favVods = pl.DataFrame({'Name': ''})
+                                favVods.write_csv(f, include_header = True)
 
                         with vodDiv:
                             loadingVod.delete()
@@ -104,6 +106,13 @@ async def homepage():
                                 itemPath = os.path.join(VODPATH, file)
                                 if os.path.isfile(itemPath):
                                     vods.append(file)
+                            
+                            # ensure all elements in the .csv file are only files that still exist in the VODs folder
+                            existingFavVods = favVods.filter(pl.col('Name').is_in(vods))
+                            existingFavVods = existingFavVods.sort('Name', descending = True)
+                            print(f"existingFavVods = {existingFavVods['Name'].to_list()}")
+                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+                                existingFavVods.write_csv(f, include_header = True)
                             
                             vods.reverse() # vods goes by oldest to newest by default, reverse it
 

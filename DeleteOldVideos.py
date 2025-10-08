@@ -29,17 +29,18 @@ def delOldVids():
 
     for entry in os.listdir(VODPATH):
         path = os.path.join(VODPATH, entry)
-        if os.path.isfile(path):
-            vods.append(entry)
+        if os.path.isfile(path): vods.append(entry)
     
     vods.sort() # make sure vods are sorted oldest to newest
 
-    # remove favVods from list (will be used for possible deletion)
+    # create new list, filtering out favorites
+    nonFavs = []
+
     for file in vods:
-        if file in favVods:
-            vods.remove(file)
+        if file in favVods: print(f"Removing {file} from candidates for deletion, since it's a favorite")
+        else: nonFavs.append(file)
     
-    for file in vods:
+    for file in nonFavs:
         size = vodFolderSize()
 
         if size <= sizeLimit:
