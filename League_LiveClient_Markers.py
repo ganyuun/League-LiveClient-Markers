@@ -18,7 +18,6 @@ VODPATH = '../../.'
 LOGPATH = '../log.txt'
 EVENTPATH = '../events.csv'
 CLIPPATH = '../../Clips'
-SSLPEM = 'riotgames.pem'
 
 user = ''
 champ = ''
@@ -27,10 +26,6 @@ outputState = ''
 outputPath = ''
 recordingDelay = 0
 customMarkers = []
-
-# custom ssl context for League API
-ssl_context = ssl.create_default_context()
-ssl_context.load_verify_locations(cafile=SSLPEM)
 
 # hotkey for custom event marker
 def customMarker():
@@ -52,7 +47,7 @@ async def getPlayerInfo():
     while True:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(ALLDATA, ssl=ssl_context) as response:
+                async with session.get(ALLDATA, ssl=False) as response:
                     data = await response.json()
                     
                     username = data.get('activePlayer', {}).get('riotIdGameName')
@@ -93,7 +88,7 @@ async def getPlayerInfo():
 async def getEvents():
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(EVENTDATA, ssl=ssl_context) as response:
+            async with session.get(EVENTDATA, ssl=False) as response:
                 data = await response.json()
                 return data
     except aiohttp.client_exceptions.ClientConnectorError:
