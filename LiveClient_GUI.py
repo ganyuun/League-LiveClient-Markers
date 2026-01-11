@@ -1,6 +1,6 @@
 import os, polars as pl, datetime, time, math, subprocess
 from nicegui import app, ui, run
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
 from DeleteOldVideos import FAVSPATH, delSpecificVid
@@ -345,7 +345,8 @@ async def watchVOD(fileName: str):
                 with notify:
                     ui.notify('Clipping video...', type='ongoing')
 
-                clippedVid = moviepyVid.subclip(minVal, maxVal)
+                clippedVid = moviepyVid.subclipped(minVal, maxVal)
+                
                 now = datetime.datetime.now()
                 clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
                 clippedVid.write_videofile(f'{CLIPPATH}/{clipFileName}')
