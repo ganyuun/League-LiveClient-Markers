@@ -7,6 +7,7 @@ autoDel.ps1
 .env
 build/
 dist/
+_internal/
 *.ico
 *.exe
 *.spec
