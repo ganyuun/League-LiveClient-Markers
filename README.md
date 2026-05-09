@@ -5,6 +5,7 @@ This script connects to OBS Websocket to get the status and output path of the a
 
 > [!IMPORTANT]
 > There are some hardcoded variables (like relative paths, and username in the case that `getPlayerInfo()` fails after 5 tries). Change them if needed!
+> Additionally, make sure you have an .env file containing `OBS_WEBSOCKET=(your OBS Websocket password here)` in the same directory as League_LiveClient_Markers.py for authentication! Otherwise, the script doesn't work!
 
 This project also has a GUI made with [NiceGUI](https://nicegui.io/)! It'll automatically open once the game ends. Through the GUI, you can view all VODs and clips in their respective folders, view events associated to those VODs if any, and clip them.
 

@@ -12,7 +12,14 @@ app.add_media_files('/champIcons', 'ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
-app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
+
+if (os.path.exists(FAVSPATH)):
+    app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
+else:
+    with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
+        favVods = pl.DataFrame({'Name': ''})
+        favVods.write_csv(f, include_header = True)
+    app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
 
 @ui.page('/')
 async def homepage():
@@ -371,7 +378,7 @@ async def watchClip(fileName: str):
             ui.video(path).classes('mx-3 w-full')
 
             def highlightVideo():
-                absolutePath = f'{os.path.abspath(CLIPPATH)}\{fileName}'
+                absolutePath = f'{os.path.abspath(CLIPPATH)}\\{fileName}'
                 print(path)
 
                 if os.path.exists(absolutePath):
