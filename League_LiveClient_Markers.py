@@ -317,6 +317,3 @@ if __name__ == '__main__':
     else:
         logger.info('OBS not recording! Opening GUI...\n-------------------\n')
         time.sleep(5)
-    
-    import DeleteOldVideos
-    import LiveClient_GUI

@@ -1,11 +1,14 @@
 import os, polars as pl, datetime, time, math, subprocess
 from nicegui import app, ui, run
 from moviepy import VideoFileClip
+from multiprocessing import freeze_support
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
 from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
+
+app.native.window_args['min_size'] = (1200, 650)
 
 app.add_media_files('/thumb', './thumbnails')
 app.add_media_files('/champIcons', 'ddragon')
@@ -392,5 +395,6 @@ async def watchClip(fileName: str):
                 ui.button('Open Clip in Explorer', on_click=highlightVideo)
                 ui.space()
 
-app.native.window_args['min_size'] = (1200, 650)
-ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True)
+if __name__ == '__main__':
+    freeze_support()
+    ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True, favicon='favicon.ico')
