@@ -1,6 +1,5 @@
-import os, polars as pl, datetime, time, math, subprocess
-from nicegui import app, ui, run
-from moviepy import VideoFileClip
+import os, polars as pl, datetime, time, math, subprocess, asyncio
+from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
 
 from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
@@ -11,7 +10,7 @@ maxVal = 0
 app.native.window_args['min_size'] = (1200, 650)
 
 app.add_media_files('/thumb', './thumbnails')
-app.add_media_files('/champIcons', 'ddragon')
+app.add_media_files('/champIcons', './ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
@@ -26,7 +25,7 @@ else:
 
 @ui.page('/')
 async def homepage():
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (80, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full') as tabs:
                 vodsTab = ui.tab('VODs', icon='videocam')
@@ -181,7 +180,7 @@ async def homepage():
                                                     ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
                                 else:
                                     with games:
-                                        with ui.item().on_click(handle_item_click_VODs):
+                                        with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
                                             with ui.item_section():
                                                 ui.item_label(file)
                                             with ui.item_section():
@@ -207,97 +206,197 @@ async def homepage():
                 with ui.tab_panel(clipsTab):
                     ui.label('Saved Clips').classes('font-bold text-2xl')
 
-                    clips = []
+                    @ui.refreshable
+                    def clipGrid():
+                        with ui.element('div').classes('w-full') as clipDiv:
+                            with ui.row() as clipPlaceholder:
+                                ui.space()
+                                ui.label('Generating clip thumbnails...')
+                                ui.spinner(size='lg')
+                                ui.space()
 
-                    with ui.element('div').classes('w-full') as clipDiv:
-                        with ui.row() as clipPlaceholder:
-                            ui.space()
-                            ui.label('Generating clip thumbnails...')
-                            ui.spinner(size='lg')
-                            ui.space()
+                        if os.path.exists('./thumbnails') and len(os.listdir('./thumbnails')) > 0:
+                            app.add_media_files('/thumb', './thumbnails')
 
-                    def createThumbnails():
-                        if not os.path.exists('./thumbnails'):
-                            os.mkdir('./thumbnails')
-
-                        for file in os.listdir(CLIPPATH):
-                            itemPath = os.path.join(CLIPPATH, file)
-
-                            if not os.path.isfile(itemPath):
-                                continue
-
-                            clips.append(file)
-
-                            fileName = os.path.splitext(file)[0]
-                            thumb_path = f'./thumbnails/{fileName}.webp'
-
-                            # skip iteration if thumbnail already exists
-                            if os.path.exists(thumb_path):
-                                continue
-
-                            with VideoFileClip(itemPath) as clipThumbnail:
-                                clipThumbnail.save_frame(thumb_path, t=1)
-
-                            # add new thumbnail as static file
-                            app.add_static_file(local_file=thumb_path, url_path=f'thumb/{fileName}.webp')
-                        
-                        # check if thumbnail has a corresponding clip in folder, if not, delete it
-                        for file in os.listdir('./thumbnails'):
-                            thumb_path = os.path.join('./thumbnails', file)
-
-                            if not os.path.isfile(thumb_path):
-                                continue
-
-                            clipName = os.path.splitext(file)[0]
-
-                            if os.path.exists(thumb_path) and os.path.exists(os.path.join(CLIPPATH, f'{clipName}.mkv')):
-                                continue
-                            elif os.path.exists(thumb_path) and os.path.exists(os.path.join(CLIPPATH, f'{clipName}.mp4')):
-                                continue
-                            else:
-                                print(f'Removed {thumb_path}')
-                                os.remove(thumb_path)
-
-                        clips.reverse() # clips go by oldest to newest by default, reversing
-
-                        with clipDiv:
+                            clips = [os.path.basename(file).split('.')[0] for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
+                            clips.reverse() # clips go by oldest to newest by default, reversing
+                            
                             clipPlaceholder.delete()
                             with ui.grid(columns = 3).classes('w-full'):
                                 for vid in clips:
                                     with ui.link(target = f'/watch/clip/{vid}').classes('no-underline'):
                                         with ui.card().tight():
                                             vidName = os.path.splitext(vid)[0]
-                                            ui.image(f'thumb/{vidName}.webp')
+                                            if os.path.exists(f'./thumbnails/{vidName}.webp'):
+                                                ui.image(f'thumb/{vidName}.webp')
+                                            else:
+                                                ui.icon('error')
+                                                ui.label('Failed to find thumbnail').classes('text-red-500')
                                             with ui.card_section():
                                                 ui.label(vidName)
 
-                    await run.io_bound(createThumbnails)
+                    async def createThumbnails():
+                        if not os.path.exists('./thumbnails'):
+                            os.mkdir('./thumbnails')
+
+                        itemPath = [os.path.join(CLIPPATH, file) for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
+                        thumbPath = [f'./thumbnails/{os.path.basename(file).split(".")[0]}.webp' for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
+                        command = [
+                            ['./ffmpeg.exe', '-y', '-ss', '00:00:01', '-i', input, '-frames:v', '1', thumb, '-loglevel', 'error'] 
+                            for input, thumb in zip(itemPath, thumbPath) if not os.path.exists(thumb)]
+                        
+                        async def thumbnailWorker(cmd, semaphore):
+                            async with semaphore:
+                                process = await asyncio.create_subprocess_exec(*cmd)
+                                await process.wait()
+                        
+                        sem = asyncio.Semaphore(os.cpu_count())
+
+                        tasks = [thumbnailWorker(cmd, sem) for cmd in command]
+                        
+                        await asyncio.gather(*tasks)
+
+                        clipGrid.refresh() # refresh clip grid to show new thumbnails
+                        
+                        # check if thumbnail has a corresponding clip in folder, if not, delete the thumbnail
+                        clipList = [os.path.basename(file).split('.')[0] for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
+                        missingClipThumbs = [os.path.basename(file).split('.')[0] for file in os.listdir('./thumbnails') if os.path.basename(file).split('.')[0] not in clipList]
+
+                        if len(missingClipThumbs) > 0:
+                            for thumb in missingClipThumbs:
+                                print(f"Removed {thumb}'s thumbnail, because its corresponding clip is missing.")
+                                os.remove(os.path.join('./thumbnails', f'{thumb}.webp'))
+
+                    clipGrid()
+                    background_tasks.create(createThumbnails())
 
 @ui.page('/watch/vod/{fileName}')
 async def watchVOD(fileName: str):
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (80, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full'):
                 home = ui.tab('Home', icon='home')
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
             path = f'/vods/{fileName}'
-            v = ui.video(path).classes('mx-3 w-full')
+            events = pl.read_csv(EVENTPATH)
 
-            moviepyVid = VideoFileClip(f'{VODPATH}/{fileName}')
-            duration = round(moviepyVid.duration)
+            with ui.element('div') as notify:
+                pass
+            
+            command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']
+            duration = subprocess.check_output(command).decode('utf-8').strip()
+            duration = math.floor(float(duration))
 
-            def rangeMinMax(event):
+            if fileName in pl.Series(events['Filename'].unique()).to_list():
+                with ui.row().classes('w-full flex-col mx-3 2xl:flex-row'):
+                    v = ui.video(path).classes('w-full 2xl:grow-7 2xl:w-[50%]').props('autoplay controls')
+
+                    rows = events.filter(pl.col('Filename').is_in([fileName]))
+
+                    def handle_row_click(event):
+                        clicked_row_data = event.args[1]
+
+                        time = clicked_row_data['EventTime']
+
+                        sec = time.split(':') # time is in min:sec format, convert back to seconds
+                        sec = [float(item) for item in sec]
+
+                        sec[0] = sec[0] * 60 # convert min to sec
+                        sec[0] += sec[1] # add sec to previously converted min
+                        v.seek(sec[0])
+                        v.play()
+                    
+                    with ui.column().classes('w-full 2xl:shrink 2xl:max-w-lg'):
+                        filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], 
+                                            value = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], multiple = True).classes('self-center 2xl:self-auto 2xl:max-w-md').props('use-chips')
+                    
+                        table = ui.table.from_polars(rows, pagination=5).classes('self-center shrink mb-3 2xl:mb-0 2xl:self-auto 2xl:max-w-md 2xl:max-h-sm')
+                        table.on('rowClick', handle_row_click)
+
+                        def applyEventFilter():
+                            selectedEvents = filterSelect.value
+
+                            rows = events.filter(pl.col('Filename').is_in([fileName]))
+
+                            if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom']):
+                                table.rows = rows.to_dicts()
+                                table.update()
+                            elif selectedEvents == []:
+                                table.rows = []
+                                table.update()
+                            else:
+                                table.rows = rows.filter(pl.col(['EventName']).is_in(selectedEvents)).to_dicts()
+                                table.update()
+                        
+                        filterSelect.on_value_change(applyEventFilter)
+            else:
+                v = ui.video(path).classes('mx-3 w-full')
+            
+            async def rangeMinMax(event):
                 global minVal, maxVal
                 minVal = event.value['min']
                 maxVal = event.value['max']
 
                 v.seek(minVal)
             
-            async def startClip():
-                await run.io_bound(clipVideo)
+            @background_tasks.await_on_shutdown
+            async def clipVideo(notif):
+                notif.message = 'Clipping video...'
+                notif.spinner = True
+                
+                now = datetime.datetime.now()
+                clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
+
+                command = ['./ffmpeg.exe', '-y', '-hide_banner', '-loglevel', 'error', '-stats', 
+                           '-ss', str(minVal), '-to', str(maxVal), 
+                           '-i', str(os.path.join(VODPATH, fileName)),
+                            str(os.path.join(CLIPPATH, clipFileName))]
+                
+                process = await asyncio.create_subprocess_exec(*command, stderr = asyncio.subprocess.PIPE)
+                
+                while True:
+                    try:
+                        line = await process.stderr.readuntil(b'\r')
+                        lineDecoded = line.decode('utf-8')
+
+                        if 'time=' in lineDecoded:
+                            currentSeconds = lineDecoded.split('time=')[1].split(' ')[0].split(':')[-1]
+
+                            if currentSeconds == 'N/A': continue
+                            else:
+                                progress = (float(currentSeconds) / (maxVal - minVal)) * 100
+
+                                notif.message = f'Clipping video... {round(progress)}%'
+                        else: continue
+                        if not line: break
+                    except asyncio.IncompleteReadError: break
+
+                await process.wait()
+                
+                app.add_media_file(local_file = f'{CLIPPATH}/{clipFileName}', url_path = f'/clips/{clipFileName}', )
+
+                await asyncio.sleep(2)
+                
+                return clipFileName
             
-            with ui.expansion('Clip!', icon='movie_creation'). classes('mx-3 w-full'):
+            async def startClip():
+                notif = ui.notification(timeout = None)
+
+                clipFileName = await background_tasks.create(clipVideo(notif))
+
+                notif.dismiss()
+
+                with ui.dialog(value = True) as dialog, ui.card():
+                    ui.label('Clip created successfully! Would you like to view it now?')
+                    with ui.row().classes('self-center'):
+                        ui.button('Yes', on_click = lambda: ui.navigate.to(f'/watch/clip/{clipFileName.split(".")[0]}'))
+                        ui.space()
+                        ui.button('No', on_click = dialog.close)
+                        ui.space()
+                        ui.button('Open Clip in Explorer', on_click= lambda: subprocess.run(['explorer', '/select,', os.path.abspath(os.path.join(CLIPPATH, clipFileName))], check=True)) 
+            
+            with ui.expansion('Clip!', icon='movie_creation', value = True). classes('mx-3 w-full'):
                 with ui.row().classes('w-full'):
                     ui.space()
                     ui.button('Clip', on_click = startClip)
@@ -307,86 +406,28 @@ async def watchVOD(fileName: str):
                 ui.label().bind_text_from(clipRange, 'value', 
                                         backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
 
-            events = pl.read_csv(EVENTPATH)
+            
+            if fileName not in pl.Series(events['Filename'].unique()).to_list():
+                ui.label('No events data found for this VOD.').classes('self-center text-red-500 text-xl')
 
-            def handle_row_click(event):
-                clicked_row_data = event.args[1]
-
-                time = clicked_row_data['EventTime']
-
-                sec = time.split(':') # time is in min:sec format, convert back to seconds
-                sec = [float(item) for item in sec]
-
-                sec[0] = sec[0] * 60 # convert min to sec
-                sec[0] += sec[1] # add sec to previously converted min
-                v.seek(sec[0])
-                v.play()
-
-            if fileName in pl.Series(events['Filename'].unique()).to_list():
-                rows = events.filter(pl.col('Filename').is_in([fileName]))
-
-                filterSelect = ui.select(label = 'Filter Events Table', options = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], 
-                                        value = ['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom'], multiple = True).classes('self-center').props('use-chips')
-
-                table = ui.table.from_polars(rows, pagination=10).classes('self-center mb-3 overflow-y-auto')
-                table.on('rowClick', handle_row_click)
-
-                def applyEventFilter():
-                    selectedEvents = filterSelect.value
-
-                    rows = events.filter(pl.col('Filename').is_in([fileName]))
-
-                    if set(selectedEvents) == set(['ChampionKill', 'Multikill', 'Assist', 'Death', 'Ace', 'Custom']):
-                        table.rows = rows.to_dicts()
-                        table.update()
-                    elif selectedEvents == []:
-                        table.rows = []
-                        table.update()
-                    else:
-                        table.rows = rows.filter(pl.col(['EventName']).is_in(selectedEvents)).to_dicts()
-                        table.update()
-                
-                filterSelect.on_value_change(applyEventFilter)
-
-            with ui.element('div') as notify:
-                pass
-
-            def clipVideo():
-                with notify:
-                    ui.notify('Clipping video...', type='ongoing')
-
-                clippedVid = moviepyVid.subclipped(minVal, maxVal)
-                
-                now = datetime.datetime.now()
-                clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
-                clippedVid.write_videofile(f'{CLIPPATH}/{clipFileName}')
-                clippedVid.close()
-
-                app.add_static_file(local_file = f'{CLIPPATH}/{clipFileName}', url_path = f'/clips/{clipFileName}')
-
-                with notify:
-                    ui.notify('Clip has been created!', type='positive')
-                    time.sleep(2.5)
-                    ui.navigate.to(f'/watch/clip/{clipFileName}')
 
 @ui.page('/watch/clip/{fileName}')
 async def watchClip(fileName: str):
-    with ui.splitter(horizontal = False, limits = (10, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
+    with ui.splitter(horizontal = False, limits = (80, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
         with splitter.before:
             with ui.tabs().props('vertical').classes('w-full'):
                 home = ui.tab('Home', icon='home')
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
-            path = f'/clips/{fileName}'
+            path = f'/clips/{fileName}.mp4'
             ui.video(path).classes('mx-3 w-full')
 
             def highlightVideo():
-                absolutePath = f'{os.path.abspath(CLIPPATH)}\\{fileName}'
-                print(path)
+                absolutePath = f'{os.path.abspath(os.path.join(CLIPPATH, fileName))}.mp4'
+                print(absolutePath)
 
                 if os.path.exists(absolutePath):
-                    cmd = f'explorer /select,"{absolutePath}"'
-                    subprocess.run(cmd, shell=True, check=True) # ignore if it returns exit status 1
+                    subprocess.run(['explorer', '/select,', absolutePath], check=True) # ignore if it returns exit status 1
                 else:
                     print('File not found')
             

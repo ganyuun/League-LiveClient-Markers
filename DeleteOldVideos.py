@@ -1,7 +1,7 @@
 from League_LiveClient_Markers import VODPATH
 import send2trash, os, polars as pl, time
 
-FAVSPATH = '../favoritedVODs.csv'
+FAVSPATH = 'data/favoritedVODs.csv'
 sizeLimit = 50 # 50 gb limit
 
 def delSpecificVid(fileName):

@@ -1,4 +1,7 @@
 __pycache__/
+vods/
+clips/
+data/
 thumbnails/*.png
 thumbnails/*.webp
 events.csv

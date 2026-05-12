@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, ssl, asyncio, aiohttp, math, polars as pl
+import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl
 from dotenv import load_dotenv
 from pynput import keyboard
 
@@ -14,10 +14,10 @@ ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'
 EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 
 # initialize variables
-VODPATH = '../../.'
-LOGPATH = '../log.txt'
-EVENTPATH = '../events.csv'
-CLIPPATH = '../../Clips'
+VODPATH = './vods/'
+LOGPATH = './data/log.txt'
+EVENTPATH = './data/events.csv'
+CLIPPATH = './clips/'
 
 user = ''
 champ = ''
