@@ -1,4 +1,5 @@
 import os, polars as pl, datetime, time, math, subprocess, asyncio
+from platform import system
 from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
 
@@ -8,6 +9,10 @@ minVal = 0
 maxVal = 0
 
 app.native.window_args['min_size'] = (1200, 650)
+
+if system() == 'Windows': creationFlags = subprocess.CREATE_NO_WINDOW
+else: creationflags = 0
+
 
 app.add_media_files('/thumb', './thumbnails')
 app.add_media_files('/champIcons', './ddragon')
@@ -69,8 +74,7 @@ async def homepage():
                                     ui.notify(f'{file} sent to recycling bin.', type = 'positive')
                                     delSpecificVid(file)
                                     dialog.close()
-                                    time.sleep(2)
-                                    ui.navigate.to('/')
+                                    ui.navigate.reload()
                                 else:
                                     ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
 
@@ -247,7 +251,7 @@ async def homepage():
                         
                         async def thumbnailWorker(cmd, semaphore):
                             async with semaphore:
-                                process = await asyncio.create_subprocess_exec(*cmd)
+                                process = await asyncio.create_subprocess_exec(*cmd, creationflags = creationFlags)
                                 await process.wait()
                         
                         sem = asyncio.Semaphore(os.cpu_count())
@@ -280,19 +284,16 @@ async def watchVOD(fileName: str):
         with splitter.after:
             path = f'/vods/{fileName}'
             events = pl.read_csv(EVENTPATH)
-
-            with ui.element('div') as notify:
-                pass
             
             command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']
-            duration = subprocess.check_output(command).decode('utf-8').strip()
+            duration = subprocess.check_output(command, creationflags = creationFlags).decode('utf-8').strip()
             duration = math.floor(float(duration))
 
             if fileName in pl.Series(events['Filename'].unique()).to_list():
                 with ui.row().classes('w-full flex-col mx-3 2xl:flex-row'):
                     v = ui.video(path).classes('w-full 2xl:grow-7 2xl:w-[50%]').props('autoplay controls')
 
-                    rows = events.filter(pl.col('Filename').is_in([fileName]))
+                    rows = events.filter(pl.col('Filename').is_in([fileName])).select(['EventName', 'EventTime'])
 
                     def handle_row_click(event):
                         clicked_row_data = event.args[1]
@@ -353,7 +354,7 @@ async def watchVOD(fileName: str):
                            '-i', str(os.path.join(VODPATH, fileName)),
                             str(os.path.join(CLIPPATH, clipFileName))]
                 
-                process = await asyncio.create_subprocess_exec(*command, stderr = asyncio.subprocess.PIPE)
+                process = await asyncio.create_subprocess_exec(*command, stderr = asyncio.subprocess.PIPE, creationflags = creationFlags)
                 
                 while True:
                     try:
