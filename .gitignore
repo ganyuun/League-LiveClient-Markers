@@ -2,8 +2,9 @@ __pycache__/
 vods/
 clips/
 data/
-thumbnails/*.png
-thumbnails/*.webp
+obs/
+data/thumbnails/*.png
+data/thumbnails/*.webp
 events.csv
 log.txt
 autoDel.ps1

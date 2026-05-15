@@ -6,8 +6,12 @@ load_dotenv()
 
 # obs websocket variables
 host = "localhost"
-port = 4455
-password = os.getenv("OBS_WEBSOCKET")
+
+with open('./obs/config/obs-studio/plugin_config/obs-websocket/config.json', 'r') as f:
+    config = json.load(f)
+
+    port = int(config.get('server_port'))
+    password = config.get('server_password')
 
 # league api URLs
 ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'

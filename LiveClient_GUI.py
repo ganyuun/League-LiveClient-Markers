@@ -14,7 +14,7 @@ if system() == 'Windows': creationFlags = subprocess.CREATE_NO_WINDOW
 else: creationflags = 0
 
 
-app.add_media_files('/thumb', './thumbnails')
+app.add_media_files('/thumb', './data/thumbnails')
 app.add_media_files('/champIcons', './ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
@@ -219,8 +219,8 @@ async def homepage():
                                 ui.spinner(size='lg')
                                 ui.space()
 
-                        if os.path.exists('./thumbnails') and len(os.listdir('./thumbnails')) > 0:
-                            app.add_media_files('/thumb', './thumbnails')
+                        if os.path.exists('./data/thumbnails') and len(os.listdir('./data/thumbnails')) > 0:
+                            app.add_media_files('/thumb', './data/thumbnails')
 
                             clips = [os.path.basename(file).split('.')[0] for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
                             clips.reverse() # clips go by oldest to newest by default, reversing
@@ -231,7 +231,7 @@ async def homepage():
                                     with ui.link(target = f'/watch/clip/{vid}').classes('no-underline'):
                                         with ui.card().tight():
                                             vidName = os.path.splitext(vid)[0]
-                                            if os.path.exists(f'./thumbnails/{vidName}.webp'):
+                                            if os.path.exists(f'./data/thumbnails/{vidName}.webp'):
                                                 ui.image(f'thumb/{vidName}.webp')
                                             else:
                                                 ui.icon('error')
@@ -239,12 +239,13 @@ async def homepage():
                                             with ui.card_section():
                                                 ui.label(vidName)
 
+                    @background_tasks.await_on_shutdown
                     async def createThumbnails():
-                        if not os.path.exists('./thumbnails'):
-                            os.mkdir('./thumbnails')
+                        if not os.path.exists('./data/thumbnails'):
+                            os.mkdir('./data/thumbnails')
 
                         itemPath = [os.path.join(CLIPPATH, file) for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
-                        thumbPath = [f'./thumbnails/{os.path.basename(file).split(".")[0]}.webp' for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
+                        thumbPath = [f'./data/thumbnails/{os.path.basename(file).split(".")[0]}.webp' for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
                         command = [
                             ['./ffmpeg.exe', '-y', '-ss', '00:00:01', '-i', input, '-frames:v', '1', thumb, '-loglevel', 'error'] 
                             for input, thumb in zip(itemPath, thumbPath) if not os.path.exists(thumb)]
@@ -264,7 +265,7 @@ async def homepage():
                         
                         # check if thumbnail has a corresponding clip in folder, if not, delete the thumbnail
                         clipList = [os.path.basename(file).split('.')[0] for file in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, file))]
-                        missingClipThumbs = [os.path.basename(file).split('.')[0] for file in os.listdir('./thumbnails') if os.path.basename(file).split('.')[0] not in clipList]
+                        missingClipThumbs = [os.path.basename(file).split('.')[0] for file in os.listdir('./data/thumbnails') if os.path.basename(file).split('.')[0] not in clipList]
 
                         if len(missingClipThumbs) > 0:
                             for thumb in missingClipThumbs:
