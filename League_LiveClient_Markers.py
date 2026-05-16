@@ -1,8 +1,5 @@
 import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl
-from dotenv import load_dotenv
 from pynput import keyboard
-
-load_dotenv()
 
 # obs websocket variables
 host = "localhost"

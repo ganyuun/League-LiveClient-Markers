@@ -23,7 +23,7 @@ if (os.path.exists(EVENTPATH)):
     app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 else:
     with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
-        headers = pl.DataFrame({'Filename': [], 'EventName': [], 'EventTime': [], 'Champion': [], 'Gamemode': []})
+        headers = pl.DataFrame({'Filename': [], 'Champion': [], 'EventName': [], 'EventTime': [], 'Gamemode': []})
         headers.write_csv(f, include_header = True)
     app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 
@@ -42,6 +42,12 @@ else:
         settings = {'username': '', 'vodFolderSizeLimit': 50}
         json.dump(settings, f)
     app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
+
+def hasFiles(filePath):
+    for item in os.listdir(filePath):
+        if os.path.isfile(os.path.join(filePath, item)):
+            return True
+    return False
 
 @ui.page('/')
 async def homepage():
@@ -216,10 +222,10 @@ async def homepage():
                                                     
                                                     ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
                     
-                    if events.is_empty():
+                    if hasFiles(VODPATH): await run.io_bound(createVodList)
+                    else:
                         loadingVod.delete()
                         ui.label('No VODs found! Play a game first!').classes('self-center text-xl')
-                    else: await run.io_bound(createVodList)
 
                 with ui.tab_panel(clipsTab):
                     ui.label('Saved Clips').classes('font-bold text-2xl')
@@ -286,13 +292,7 @@ async def homepage():
                                 print(f"Removed {thumb}'s thumbnail, because its corresponding clip is missing.")
                                 os.remove(os.path.join('./thumbnails', f'{thumb}.webp'))
 
-                    def hasFiles():
-                        for item in os.listdir(CLIPPATH):
-                            if os.path.isfile(os.path.join(CLIPPATH, item)):
-                                return True
-                        return False
-
-                    if hasFiles():
+                    if hasFiles(CLIPPATH):
                         clipGrid()
                         background_tasks.create(createThumbnails())
                     else: ui.label('No clips found! Clip something first!').classes('self-center text-xl')
