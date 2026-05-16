@@ -1,9 +1,9 @@
-import os, polars as pl, datetime, time, math, subprocess, asyncio
+import os, polars as pl, datetime, math, subprocess, asyncio, json
 from platform import system
 from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
 
-from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH
+from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH
 from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
@@ -18,7 +18,14 @@ app.add_media_files('/thumb', './data/thumbnails')
 app.add_media_files('/champIcons', './ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
-app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
+
+if (os.path.exists(EVENTPATH)):
+    app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
+else:
+    with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
+        headers = pl.DataFrame({'Filename': [], 'EventName': [], 'EventTime': [], 'Champion': [], 'Gamemode': []})
+        headers.write_csv(f, include_header = True)
+    app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 
 if (os.path.exists(FAVSPATH)):
     app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
@@ -28,6 +35,14 @@ else:
         favVods.write_csv(f, include_header = True)
     app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
 
+if (os.path.exists(SETTINGSPATH)):
+    app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
+else:
+    with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
+        settings = {'username': '', 'vodFolderSizeLimit': 50}
+        json.dump(settings, f)
+    app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
+
 @ui.page('/')
 async def homepage():
     with ui.splitter(horizontal = False, limits = (80, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
@@ -35,10 +50,14 @@ async def homepage():
             with ui.tabs().props('vertical').classes('w-full') as tabs:
                 vodsTab = ui.tab('VODs', icon='videocam')
                 clipsTab = ui.tab('Clips', icon='movie_creation')
+                settingsTab = ui.tab('Settings', icon='settings')
         with splitter.after:
             with ui.tab_panels(tabs, value = vodsTab).classes('w-full'):
                 with ui.tab_panel(vodsTab):
                     ui.label('Saved VODs').classes('font-bold text-2xl')
+
+                    events = pl.read_csv(EVENTPATH)
+                    favVods = pl.read_csv(FAVSPATH)
 
                     with ui.element('div').classes('w-full') as vodDiv:
                         loadingVod = ui.spinner(size='lg')
@@ -86,14 +105,6 @@ async def homepage():
                         dialog.open()
 
                     def createVodList():
-                        events = pl.read_csv(EVENTPATH)
-
-                        if os.path.exists(FAVSPATH): favVods = pl.read_csv(FAVSPATH)
-                        else:
-                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-                                favVods = pl.DataFrame({'Name': ''})
-                                favVods.write_csv(f, include_header = True)
-
                         with vodDiv:
                             loadingVod.delete()
                             games = ui.list().props('bordered separator')
@@ -205,7 +216,10 @@ async def homepage():
                                                     
                                                     ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
                     
-                    await run.io_bound(createVodList)
+                    if events.is_empty():
+                        loadingVod.delete()
+                        ui.label('No VODs found! Play a game first!').classes('self-center text-red-500 text-xl')
+                    else: await run.io_bound(createVodList)
 
                 with ui.tab_panel(clipsTab):
                     ui.label('Saved Clips').classes('font-bold text-2xl')
@@ -274,6 +288,31 @@ async def homepage():
 
                     clipGrid()
                     background_tasks.create(createThumbnails())
+
+                with ui.tab_panel(settingsTab):
+                    ui.label('Settings').classes('font-bold text-2xl')
+
+                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
+                        settings = json.load(f)
+                        maxVodSize = int(settings.get('vodFolderSizeLimit'))
+
+                    def updateSettings(button):
+                        settings.update({'vodFolderSizeLimit': int(maxVodSelect.value)})
+                        with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
+                            json.dump(settings, f)
+                        
+                        ui.notify('Settings updated successfully!', type = 'positive')
+                        button.disable()
+                    
+                    def compareSettings():
+                        if maxVodSelect.value != maxVodSize: button.enable()
+                        else: button.disable()
+                    
+                    ui.label('Maximum VOD Folder Size (GB):')
+                    maxVodSelect = ui.number(value = maxVodSize, min = 3, max = 100, precision = 0, suffix = ' GB', on_change = lambda: compareSettings())
+                    
+                    button = ui.button('Save', on_click = lambda: updateSettings(button)).classes('justify-self-end')
+                    button.disable()
 
 @ui.page('/watch/vod/{fileName}')
 async def watchVOD(fileName: str):

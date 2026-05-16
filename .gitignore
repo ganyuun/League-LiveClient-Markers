@@ -15,3 +15,4 @@ _internal/
 *.ico
 *.exe
 *.spec
+*.iss

@@ -21,6 +21,7 @@ EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 VODPATH = './vods/'
 LOGPATH = './data/log.txt'
 EVENTPATH = './data/events.csv'
+SETTINGSPATH = './data/settings.json'
 CLIPPATH = './clips/'
 
 user = ''
@@ -42,7 +43,7 @@ def customMarker():
 listener = keyboard.GlobalHotKeys({'<ctrl>+<F1>': customMarker})
 
 # access league live client API for username & chosen champion
-# if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning hardcoded username, and NA
+# if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning username from settings (or a hardcoded one if it wasn't saved beforehand), and NA
 async def getPlayerInfo():
     global gamemode
     global recordingDelay
@@ -75,13 +76,32 @@ async def getPlayerInfo():
                             logger.info("More than two events detected, recording delay wasn't calculated.\n")
 
                         logger.info('All League data received! %s %s %s\n', username, champion, gamemode)
+
+                        # store username, in case getPlayerInfo() fails in the future
+                        if (os.path.exists(SETTINGSPATH)):
+                            with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
+                                settings = json.load(f)
+
+                            if settings.get('username') != username:
+                                with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
+                                    settings.update({'username': username})
+                                    json.dump(settings, f)
+                        else:
+                            with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
+                                settings = {'username': username, 'vodFolderSizeLimit': 50}
+                                json.dump(settings, f)
+                                
                         return username, champion
         except aiohttp.client_exceptions.ClientConnectorError:
             logger.error('Error in getPlayerInfo()! League client not open!')
             connectorErrorCounter += 1
             
             if connectorErrorCounter == 4:
-                return 'lycn', 'NA'
+                if (os.path.exists(SETTINGSPATH)):
+                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
+                        settings = json.load(f)
+                        return settings.get('username'), 'NA'
+                else: return 'lycn', 'NA' # if the user's username wasn't stored beforehand, not much can be done. last resort so that the script doesn't crash
             
             time.sleep(10)
         except KeyError:

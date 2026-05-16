@@ -1,8 +1,13 @@
-from League_LiveClient_Markers import VODPATH
-import send2trash, os, polars as pl, time
+from League_LiveClient_Markers import VODPATH, SETTINGSPATH
+import send2trash, os, polars as pl, time, json
 
 FAVSPATH = 'data/favoritedVODs.csv'
-sizeLimit = 50 # 50 gb limit
+
+if (os.path.exists(SETTINGSPATH)):
+    with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
+        settings = json.load(f)
+        sizeLimit = int(settings.get('vodFolderSizeLimit'))
+else: sizeLimit = 50 # vod folder size limit is 50gb unless otherwise specified
 
 def delSpecificVid(fileName):
     if os.path.exists(os.path.join(VODPATH, fileName)):
