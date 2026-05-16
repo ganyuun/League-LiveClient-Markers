@@ -218,7 +218,7 @@ async def homepage():
                     
                     if events.is_empty():
                         loadingVod.delete()
-                        ui.label('No VODs found! Play a game first!').classes('self-center text-red-500 text-xl')
+                        ui.label('No VODs found! Play a game first!').classes('self-center text-xl')
                     else: await run.io_bound(createVodList)
 
                 with ui.tab_panel(clipsTab):
@@ -286,8 +286,16 @@ async def homepage():
                                 print(f"Removed {thumb}'s thumbnail, because its corresponding clip is missing.")
                                 os.remove(os.path.join('./thumbnails', f'{thumb}.webp'))
 
-                    clipGrid()
-                    background_tasks.create(createThumbnails())
+                    def hasFiles():
+                        for item in os.listdir(CLIPPATH):
+                            if os.path.isfile(os.path.join(CLIPPATH, item)):
+                                return True
+                        return False
+
+                    if hasFiles():
+                        clipGrid()
+                        background_tasks.create(createThumbnails())
+                    else: ui.label('No clips found! Clip something first!').classes('self-center text-xl')
 
                 with ui.tab_panel(settingsTab):
                     ui.label('Settings').classes('font-bold text-2xl')
