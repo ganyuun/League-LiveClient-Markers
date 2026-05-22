@@ -3,9 +3,12 @@ League LiveClient Markers.py is meant for use with [OBS Advanced Scene Switcher]
 
 This script connects to OBS Websocket to get the status and output path of the active recording, and Riot's [Live Client API](https://developer.riotgames.com/docs/lol#game-client-api_live-client-data-api) to get the player's username, chosen champion, and events that occur throughout the game. Once League of Legends is closed, events are filtered to find ones that only include you, and are then saved to a .csv file!
 
+There's also a custom hotkey (CTRL + F1) to save a custom marker during a League game.
+
 This project also has a GUI made with [NiceGUI](https://nicegui.io/)! Through the GUI, you can watch all of your recordings and clips, view events associated to those recordings if any, and clip them.
 
-Note: This program has only been tested on Windows 10 and 11 x64 systems! It most likely doesn't work on other platforms.
+> [!WARNING]
+> This program has only been tested on Windows 10 and 11 x64 systems! It doesn't work on other platforms.
 
 ---
 
@@ -13,32 +16,49 @@ Note: This program has only been tested on Windows 10 and 11 x64 systems! It mos
 
 ### Using the Installer
 
-The installer includes all of the required files & folder structure (ffmpeg, and portable OBS with Advanced Scene Switcher already installed & ready to detect if League of Legends is open). Having OBS open on startup isn't required, but it is convenient!
+1. Download and run the latest installer in the [Releases tab](https://github.com/ganyuun/League-LiveClient-Markers/releases)
 
-After installing, make sure to open OBS > go to Tools > WebSocket Server Settings > Enable WebSocket Server, and allow OBS through only private network firewalls *(not public)*! If the Windows Security Alert doesn't pop up after clicking apply and OK, you might have to close and reopen OBS.
+2. If preferred, have OBS Portable open on startup to make sure your games are recorded
 
-OBS Websocket is required for LiveClient to function. Advanced Scene Switcher is already set up with the required actions, but please test it in Practice Tool with a bot first (try killing it a couple of times)! If the GUI pops up a little after you leave the game and the VOD shows up in the list, the app is working correctly.
+3. Enable OBS Websocket (required for LiveClient to function!)
+
+After installing, open OBS > go to Tools > WebSocket Server Settings > Enable WebSocket Server, and allow OBS through only private network firewalls *(not public)*! If the Windows Security Alert doesn't pop up after clicking apply and OK, you might have to close and reopen OBS.
 
 Lastly, OBS portable is set up to minimize to tray! Try to minimize it instead of closing it, or LiveClient won't record your games automatically!
 
 ### Using the Scripts Directly
 
-If you choose not to use the installer, the scripts requires the following folder structure:
+1. Create the following folder structure: 
 
-Parent folder *(can be any folder you like, I prefer Videos)* > LiveClient > ddragon.
+- LiveClient *(all of the scripts / .exe's should be in here, along with [ffmpeg and ffprobe](https://www.gyan.dev/ffmpeg/builds/))*
+  - ddragon
+  - vods
+  - clips
+  - data
+  - [obs](https://obsproject.com/kb/portable-mode) (with [Advanced Scene Switcher installed](https://obsproject.com/forum/resources/advanced-scene-switcher.395/))
 
-League_LiveClient_Markers.py depends on a portable version of OBS, but if you don't want to use that, remove the `with open` at the top of the script and hardcode your WebSocket host & password. 
+2. Download [OBS portable](https://obsproject.com/kb/portable-mode), and install [Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/)
 
-The Python scripts should all be in the LiveClient folder. Make sure to install each module imported in the scripts, and create the following subfolders under LiveClient: \clips, \vods, and \data. The LiveClient scripts will create them if they don't already exist, but OBS needs to be set to save your recordings in \vods.
+> [!IMPORTANT]
+> If you don't want to use OBS portable, remove the `with open` at the top of `League_LiveClient_Markers.py` and hardcode your WebSocket host & password.
 
-The following is the Advanced Scene Switcher Macro used for the installer version (but make sure to change the `${LiveClientPath}` variable to where you have the scripts saved):
+Make sure to download the .zip file (ex. `advanced-scene-switcher-1.33.1-windows-x64.zip`) and copy the files/directories to the matching folders in OBS portable's folders.
+
+3. Set up OBS
+
+    1. Set OBS to output in `/vods`
+    2. Add a [Game Capture](https://obsproject.com/kb/game-capture-setup-guide) source for League of Legends
+    3. Set up the Advanced Scene Switcher macro
+
+The following is the Advanced Scene Switcher Macro used for the installer version. Make sure to change each "run" step to `cmd`, then add the argument `py {name of script}.py`.
+
+If you're not using OBS Portable, make sure to change the `${LiveClientPath}` variable to the folder where you have the scripts saved:
 
 <details>
-
 <summary>Advanced Scene Switcher Macro</summary>
 
-`AAAROXiczVZtT+M4EP4rOev6rSmU0u5R3Re25e6Q6MJty55Wqwq5ySSx6tqR7aRUVf/7jeO0SZbeglacQAIUxvPmZ+aZ8ZasaKCkJsNvWyLoCsiQXGZGep8hkCr0boDGGZA2iZXMUjKMKNfQJinNNExpDh8hoTmTigxPS2lNR1HOgR8EQQLBciRFyAyTQl+Lu+81aGBPZorFMaiJDNFZt030kqVXjxDciqmhyhy0tZHpZeB8RZ+kGUtRRbf5JVKZEVNBxsxVTnlGrW5dY5Shj9UhpZFN8FoYUKhdpf1DpS2xnqH2cdrptYnZpPZzh2EEMwU6OShdxO+iNJTBcgrGMBFra6sgZhp91i5HRUg5XmmMqmRoVAbO7B8mQrnGOhUHbZJQ/TkTHzNjrHOnh7I7W4wnUkTQZPqGLmqoJyxOOP6a66iqzkxlFZhq738Gj3gZgvFIWe6GvIhJ7J2fnt07GZ4GjSAuo1Kpiu9RBZ5Nu9Ow+MMm9COTImNrY6G6DlGBhrnWftHmvhX6UUgX0Vmv558NLn7zzwf9M/8C+pE/6J0PaDSAsLuwaTbqVZi7ZjsEnKacGazZndTMdRZyKLVc+jDYtcvPQb+/m5f2V5ia8/Hfpufn5wfb7ocLa7vvjb+kWcJGN0nohGg/P8BeFxkZxxzuvhdXgBaRNcQrEKbekIHknKYawqd8aXZPUJeRycbjxWebgKALbu1d8zXgZLYwqZIBaI2qXMYsKEgSZqpgKZKfRczyYUsMW8EDZqyNokw4MmmwV9DH+NfvnD7HPxTvgw+JG3GejHDYxYBOO/Bo6x9JvFpFATx7xNJHLLax3OXqs84wOw7cXWVaYmsTqMWd70fcW8KuAxDwoNfMBAnZJ1QgFFCRUwvJBHHGIxw08FhDtlvHtXAzBQ6l/XZ/1t7vkSfAlksF70r2wWoOXFT0jGUWjhazvcdKZBmfGVJ1yvER/GwLtMmC4zC4F4bx2cF7Y4UUN5ztvfxkuVwVmtX63femuLu0t+A0WHo6UADCi5RceQtA1x4TnknAUzW4ni3rmrLnYOm+gBqVh7OfRtamcihd/eTNWn5jZ8fmQUiDUyVwAOFQxgFA41qrHgD3cFV62r42IPwFNQ0zvHgahTkVAYTe1PaGNy1IhFMK4wRFb/66vWE5jDjDS95Rk+wifB7hUQf/kPcBRr2r9uTv2nHHQztvyWh4cq/R6mQtecRPvrAQpC7moVpRu3Fbo9HXr35rMvFb47HXShK/tVr5rWKSBwlNcVV9chOAvCpt7HvTezpUIEfv2sM3ayfQ+YsQcM8XtwGqmZ5ivY6V0IV8qKQPE6qW6LVcFGuplnizMUNkjVSbYz4s1spe/tt89wxJX8qwA3bNBQOHR8ZbLpljTXb63prszeaKTNN3N1eOMW6M29kg2WzRvLyokbdOcFfRhUQu9k/jhcfZqlg8r806F/uWh6433h/XXhPo2xRB/fP++v+YXod/3x+Ec/vGTDPzhSpmb+0mVl7+V/K7mRrZza1Z3rAQRzXxBYcb47JacWXKpNM5cT/2vQQRzThm4I5I9Ub/O4Os8D+v5Uy6nV6v0yW7fwG7mvLH`
+`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`
 
 </details>
 
-The GUI requires [ffmpeg and ffprobe](https://www.gyan.dev/ffmpeg/builds/) to be in the LiveClient folder.
+Before trying out LiveClient in real games, make sure it works first by testing it in Practice Tool and killing a bot a couple times to save events! If the GUI pops up a little after you leave the game and the VOD shows up in the list, the app is working correctly.

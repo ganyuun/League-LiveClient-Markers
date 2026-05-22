@@ -337,4 +337,3 @@ if __name__ == '__main__':
             logger.info('No events to write to .csv. Opening GUI...')
     else:
         logger.info('OBS not recording! Opening GUI...\n-------------------\n')
-        time.sleep(5)

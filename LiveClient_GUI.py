@@ -19,24 +19,21 @@ app.add_media_files('/champIcons', './ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 
-if (os.path.exists(EVENTPATH)):
-    app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
+if (os.path.exists(EVENTPATH)): app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 else:
     with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
         headers = pl.DataFrame({'Filename': [], 'Champion': [], 'EventName': [], 'EventTime': [], 'Gamemode': []})
         headers.write_csv(f, include_header = True)
     app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 
-if (os.path.exists(FAVSPATH)):
-    app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
+if (os.path.exists(FAVSPATH)): app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
 else:
     with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
         favVods = pl.DataFrame({'Name': ''})
         favVods.write_csv(f, include_header = True)
     app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
 
-if (os.path.exists(SETTINGSPATH)):
-    app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
+if (os.path.exists(SETTINGSPATH)): app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
 else:
     with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
         settings = {'username': '', 'vodFolderSizeLimit': 50}
@@ -45,8 +42,7 @@ else:
 
 def hasFiles(filePath):
     for item in os.listdir(filePath):
-        if os.path.isfile(os.path.join(filePath, item)):
-            return True
+        if os.path.isfile(os.path.join(filePath, item)): return True
     return False
 
 @ui.page('/')
@@ -65,11 +61,9 @@ async def homepage():
                     events = pl.read_csv(EVENTPATH)
                     favVods = pl.read_csv(FAVSPATH)
 
-                    with ui.element('div').classes('w-full') as vodDiv:
-                        loadingVod = ui.spinner(size='lg')
+                    with ui.element('div').classes('w-full') as vodDiv: loadingVod = ui.spinner(size='lg')
                     
-                    def handle_item_click_VODs(file):
-                        ui.navigate.to(f'/watch/vod/{file}')
+                    def handle_item_click_VODs(file): ui.navigate.to(f'/watch/vod/{file}')
 
                     def handle_button_click_VODS(event, file):
                         favVods = pl.read_csv(FAVSPATH)
@@ -300,26 +294,28 @@ async def homepage():
                 with ui.tab_panel(settingsTab):
                     ui.label('Settings').classes('font-bold text-2xl')
 
-                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
-                        settings = json.load(f)
-                        maxVodSize = int(settings.get('vodFolderSizeLimit'))
+                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f: settings = json.load(f)
 
                     def updateSettings(button):
-                        settings.update({'vodFolderSizeLimit': int(maxVodSelect.value)})
-                        with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
-                            json.dump(settings, f)
+                        settings.update({'username': usernameInput.value, 'vodFolderSizeLimit': int(maxVodSelect.value)})
+                        with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f: json.dump(settings, f)
                         
                         ui.notify('Settings updated successfully!', type = 'positive')
                         button.disable()
                     
                     def compareSettings():
-                        if maxVodSelect.value != maxVodSize: button.enable()
+                        if maxVodSelect.value != int(settings.get('vodFolderSizeLimit')) or usernameInput.value != settings.get('username'): 
+                            if len(usernameInput.value) >= 3 and len(usernameInput.value) <= 16 and not '#' in usernameInput.value: button.enable()
+                            else: button.disable()
                         else: button.disable()
+
+                    ui.label('League of Legends username (not including tagline):')
+                    usernameInput = ui.input(value = settings.get('username'), validation = {'Input too short': lambda v: len(v) >= 3, 'Input too long': lambda v: len(v) <= 16, 'Invalid input': lambda v: '#' not in v}, on_change = lambda: compareSettings())
                     
                     ui.label('Maximum VOD Folder Size (GB):')
-                    maxVodSelect = ui.number(value = maxVodSize, min = 3, max = 100, precision = 0, suffix = ' GB', on_change = lambda: compareSettings())
+                    maxVodSelect = ui.number(value = int(settings.get('vodFolderSizeLimit')), min = 5, max = 100, precision = 0, suffix = ' GB', on_change = lambda: compareSettings())
                     
-                    button = ui.button('Save', on_click = lambda: updateSettings(button)).classes('justify-self-end')
+                    button = ui.button('Save', on_click = lambda: updateSettings(button))
                     button.disable()
 
 @ui.page('/watch/vod/{fileName}')
@@ -337,10 +333,18 @@ async def watchVOD(fileName: str):
             duration = subprocess.check_output(command, creationflags = creationFlags).decode('utf-8').strip()
             duration = math.floor(float(duration))
 
+            async def seekVideo(seconds):
+                time = await ui.run_javascript(f'getHtmlElement({v.id}).currentTime')
+                v.seek(time + seconds)
+            
             if fileName in pl.Series(events['Filename'].unique()).to_list():
                 with ui.row().classes('w-full flex-col mx-3 2xl:flex-row'):
-                    v = ui.video(path).classes('w-full 2xl:grow-7 2xl:w-[50%]').props('autoplay controls')
-
+                    with ui.column().classes('w-full 2xl:grow-7 2xl:w-[50%]'):
+                        v = ui.video(path).props('autoplay controls controlslist="nodownload noremoteplayback" disablepictureinpicture')
+                        with ui.row().classes('w-full justify-center items-center'):
+                            ui.button('-5 sec', on_click = lambda: seekVideo(-5))
+                            ui.button('+5 sec', on_click = lambda: seekVideo(5))
+                    
                     rows = events.filter(pl.col('Filename').is_in([fileName])).select(['EventName', 'EventTime'])
 
                     def handle_row_click(event):
@@ -380,7 +384,11 @@ async def watchVOD(fileName: str):
                         
                         filterSelect.on_value_change(applyEventFilter)
             else:
-                v = ui.video(path).classes('mx-3 w-full')
+                v = ui.video(path).classes('mx-3 w-full').props('autoplay controls controlslist="nodownload noremoteplayback" disablepictureinpicture')
+                
+                with ui.row().classes('w-full mx-8 justify-center items-center'):
+                    ui.button('-5 sec', on_click = lambda: seekVideo(-5))
+                    ui.button('+5 sec', on_click = lambda: seekVideo(5))
             
             async def rangeMinMax(event):
                 global minVal, maxVal
@@ -443,7 +451,7 @@ async def watchVOD(fileName: str):
                         ui.space()
                         ui.button('No', on_click = dialog.close)
                         ui.space()
-                        ui.button('Open Clip in Explorer', on_click= lambda: subprocess.run(['explorer', '/select,', os.path.abspath(os.path.join(CLIPPATH, clipFileName))], check=True)) 
+                        ui.button('Open Clip in Explorer', on_click = lambda: subprocess.run(['explorer', '/select,', os.path.abspath(os.path.join(CLIPPATH, clipFileName))], check=True)) 
             
             with ui.expansion('Clip!', icon='movie_creation', value = True). classes('mx-3 w-full'):
                 with ui.row().classes('w-full'):
@@ -469,7 +477,7 @@ async def watchClip(fileName: str):
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
             path = f'/clips/{fileName}.mp4'
-            ui.video(path).classes('mx-3 w-full')
+            ui.video(path).classes('mx-3 w-full').props('controls controlslist="nodownload noremoteplayback" disablepictureinpicture')
 
             def highlightVideo():
                 absolutePath = f'{os.path.abspath(os.path.join(CLIPPATH, fileName))}.mp4'

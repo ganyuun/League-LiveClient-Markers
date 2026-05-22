@@ -1,0 +1,18 @@
+[project]
+name = "league-liveclient-markers"
+version = "1.1.0"
+description = "Getting events from Riot's Live Client API!"
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    "aiohttp>=3.13.5",
+    "asyncio>=4.0.0",
+    "logging>=0.4.9.6",
+    "nicegui>=3.12.1",
+    "obsws-python>=1.8.0",
+    "polars>=1.40.1",
+    "pynput>=1.8.2",
+    "pythonnet>=3.0.5",
+    "pywebview>=6.2.1",
+    "send2trash>=2.1.0",
+]
