@@ -1,5 +1,8 @@
 import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring
 from pynput import keyboard
+from keyring.backends.Windows import WinVaultKeyring
+
+keyring.set_keyring(WinVaultKeyring())
 
 # league api URLs
 ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'

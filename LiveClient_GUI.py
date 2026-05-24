@@ -2,11 +2,14 @@ import os, polars as pl, time, math, subprocess, asyncio, json, keyring
 from platform import system
 from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
+from keyring.backends.Windows import WinVaultKeyring
 
 from League_LiveClient_Markers import LOGPATH, VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH
 from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
+
+keyring.set_keyring(WinVaultKeyring())
 
 app.native.window_args['min_size'] = (1200, 650)
 
@@ -305,7 +308,7 @@ async def homepage():
                         
                         ui.notify('Settings updated successfully!', type = 'positive')
                         logger.info('Settings updated successfully!')
-                        
+
                         button.disable()
                     
                     def compareSettings():
