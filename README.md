@@ -28,31 +28,37 @@ Lastly, OBS portable is set up to minimize to tray! Try to minimize it instead o
 
 ### Using the Scripts Directly
 
-1. Create the following folder structure: 
+1. Use the pyproject.toml file to ensure you have all dependencies & the required Python version installed!
 
-- LiveClient *(all of the scripts / .exe's should be in here, along with [ffmpeg and ffprobe](https://www.gyan.dev/ffmpeg/builds/))*
-  - ddragon
-  - vods
-  - clips
-  - data
-  - [obs](https://obsproject.com/kb/portable-mode) (with [Advanced Scene Switcher installed](https://obsproject.com/forum/resources/advanced-scene-switcher.395/))
+2. Create the following folder structure:
 
-2. Download [OBS portable](https://obsproject.com/kb/portable-mode), and install [Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/)
+- /LiveClient *(all of the scripts should be in here, along with the [ffmpeg and ffprobe](https://www.gyan.dev/ffmpeg/builds/) .exe's)*
+  - /ddragon (and download the images from this repository's ddragon folder)
+  - /vods
+  - /clips
+  - /data/logs
+  - /[obs](https://obsproject.com/kb/portable-mode) (with [Advanced Scene Switcher installed](https://obsproject.com/forum/resources/advanced-scene-switcher.395/)) **(optional)**
+
+2. Download [OBS portable](https://obsproject.com/kb/portable-mode), and install [Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/) **(optional)**
+
+Make sure to download the .zip file (ex. `advanced-scene-switcher-1.33.1-windows-x64.zip`) and copy the files/folders to the matching directories in OBS Portable.
 
 > [!IMPORTANT]
-> If you don't want to use OBS portable, remove the `with open` at the top of `League_LiveClient_Markers.py` and hardcode your WebSocket host & password.
-
-Make sure to download the .zip file (ex. `advanced-scene-switcher-1.33.1-windows-x64.zip`) and copy the files/directories to the matching folders in OBS portable's folders.
+> If you already have OBS installed and don't want to use OBS Portable, install [Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/) using the .exe, and enter your OBS Websocket host and password in the LiveClient GUI's settings.
 
 3. Set up OBS
 
-    1. Set OBS to output in `/vods`
+    1. Set OBS to output in `/LiveClient/vods`
     2. Add a [Game Capture](https://obsproject.com/kb/game-capture-setup-guide) source for League of Legends
-    3. Set up the Advanced Scene Switcher macro
+    3. Enable OBS WebSocket by going to Tools > WebSocket Server Settings
+    4. Set up the Advanced Scene Switcher macro
+
+> [!TIP]
+> If you already have OBS installed, you may want to create a [new profile](https://obsproject.com/kb/profiles) for LiveClient.
 
 The following is the Advanced Scene Switcher Macro used for the installer version. Make sure to change each "run" step to `cmd`, then add the argument `py {name of script}.py`.
 
-If you're not using OBS Portable, make sure to change the `${LiveClientPath}` variable to the folder where you have the scripts saved:
+If you're not using OBS Portable, make sure to set the `${LiveClientPath}` variable to the LiveClient folder (or where you have the scripts saved). The working directory must be the same LiveClient folder:
 
 <details>
 <summary>Advanced Scene Switcher Macro</summary>

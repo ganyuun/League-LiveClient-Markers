@@ -1,14 +1,5 @@
-import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl
+import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring
 from pynput import keyboard
-
-# obs websocket variables
-host = "localhost"
-
-with open('./obs/config/obs-studio/plugin_config/obs-websocket/config.json', 'r') as f:
-    config = json.load(f)
-
-    port = int(config.get('server_port'))
-    password = config.get('server_password')
 
 # league api URLs
 ALLDATA = 'https://127.0.0.1:2999/liveclientdata/allgamedata'
@@ -16,7 +7,7 @@ EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 
 # initialize variables
 VODPATH = './vods/'
-LOGPATH = './data/log.txt'
+LOGPATH = f"./data/logs/log {time.strftime('%m-%d-%Y')}.txt"
 EVENTPATH = './data/events.csv'
 SETTINGSPATH = './data/settings.json'
 CLIPPATH = './clips/'
@@ -28,6 +19,24 @@ outputState = ''
 outputPath = ''
 recordingDelay = 0
 customMarkers = []
+
+# obs websocket variables
+host = "localhost"
+
+# for OBS portable
+if os.path.exists('./obs/config/obs-studio/plugin_config/obs-websocket'):
+    with open('./obs/config/obs-studio/plugin_config/obs-websocket/config.json', 'r') as f:
+        config = json.load(f)
+
+        port = int(config.get('server_port'))
+        password = config.get('server_password')
+# if the user doesn't have OBS portable
+else:
+    port = keyring.get_password('LiveClient', 'port')
+    password = keyring.get_password('LiveClient', 'websocketPassword')
+    
+    # change port from None because obsws will raise an error since it can't cast None to int
+    if port == None: port = 0
 
 # hotkey for custom event marker
 def customMarker():
@@ -301,11 +310,11 @@ async def main():
 
 if __name__ == '__main__':
     import logging
-
-    cl = obs.ReqClient(host=host, port=port, password=password)
-    ev = obs.EventClient(host=host, port=port, password=password)
     
     logger = logging.getLogger(__name__)
+
+    os.makedirs('./data/logs', exist_ok = True)
+
     fh = logging.FileHandler(LOGPATH, encoding='utf-8')
     ch = logging.StreamHandler()
 
@@ -320,20 +329,27 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     logger.addHandler(fh)
 
-    logger.info('OBS websocket client created')
+    try:
+        cl = obs.ReqClient(host=host, port=port, password=password)
+        ev = obs.EventClient(host=host, port=port, password=password)
 
-    recordStatus = cl.get_record_status().output_active
+        logger.info('OBS websocket client created successfully.')
 
-    # if OBS is recording, run async tasks
-    if (recordStatus):
-        logger.info('OBS is recording! Getting player info...')
-        listener.start()
-        fieldnames, events = asyncio.run(main())
+        recordStatus = cl.get_record_status().output_active
 
-        if events != 'No events':
-            writeToFile(events)
-            delEvents(VODPATH, EVENTPATH)
+        # if OBS is recording, run async tasks
+        if (recordStatus):
+            logger.info('OBS is recording! Getting player info...')
+            listener.start()
+            fieldnames, events = asyncio.run(main())
+
+            if events != 'No events':
+                writeToFile(events)
+                delEvents(VODPATH, EVENTPATH)
+            else:
+                logger.info('No events to write to .csv. Opening GUI...')
         else:
-            logger.info('No events to write to .csv. Opening GUI...')
-    else:
-        logger.info('OBS not recording! Opening GUI...\n-------------------\n')
+            logger.info('OBS not recording! Opening GUI...\n-------------------\n')
+    except ConnectionRefusedError:
+        if os.path.exists('./obs/config/obs-studio/plugin_config/obs-websocket'): logger.critical('OBS Websocket refused the connection and LiveClient is unable to continue. Did you set up Websocket in OBS Portable?\n-------------------\n')
+        else: logger.critical('OBS Websocket refused the connection and LiveClient is unable to continue. Make sure you entered the correct OBS Websocket port and password in Settings!\n-------------------\n')

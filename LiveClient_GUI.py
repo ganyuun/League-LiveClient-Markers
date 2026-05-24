@@ -1,9 +1,9 @@
-import os, polars as pl, datetime, math, subprocess, asyncio, json
+import os, polars as pl, time, math, subprocess, asyncio, json, keyring
 from platform import system
 from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
 
-from League_LiveClient_Markers import VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH
+from League_LiveClient_Markers import LOGPATH, VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH
 from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
@@ -12,7 +12,6 @@ app.native.window_args['min_size'] = (1200, 650)
 
 if system() == 'Windows': creationFlags = subprocess.CREATE_NO_WINDOW
 else: creationflags = 0
-
 
 app.add_media_files('/thumb', './data/thumbnails')
 app.add_media_files('/champIcons', './ddragon')
@@ -71,7 +70,7 @@ async def homepage():
                         if file in favVods['Name'].to_list():
                             filteredVods = favVods.filter(pl.col('Name') != file)
                             filteredVods = filteredVods.sort('Name', descending = True)
-                            print(f"Removed {file} from favorites. FavVods is now {filteredVods['Name'].to_list()}")
+                            logger.info('Removed %s from favorites. FavVods is now %s.', file, filteredVods['Name'].to_list())
                             event.sender.props('icon=star_border')
 
                             with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
@@ -80,7 +79,7 @@ async def homepage():
                             newFav = pl.DataFrame({'Name': [file]})
                             favVods = pl.concat([favVods, newFav])
                             favVods = favVods.sort('Name', descending = True)
-                            print(f"Added {file} to favorites! FavVods is now {favVods['Name'].to_list()}")
+                            logger.info('Added %s to favorites! FavVods is now %s.', file, favVods['Name'].to_list())
                             event.sender.props('icon=star')
 
                             with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
@@ -134,14 +133,14 @@ async def homepage():
                             # ensure all elements in the .csv file are only files that still exist in the VODs folder
                             existingFavVods = favVods.filter(pl.col('Name').is_in(vods))
                             existingFavVods = existingFavVods.sort('Name', descending = True)
-                            print(f"existingFavVods = {existingFavVods['Name'].to_list()}")
+                            logger.info('existingFavVods: %s', existingFavVods['Name'].to_list())
+                            
                             with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
                                 existingFavVods.write_csv(f, include_header = True)
                             
                             vods.reverse() # vods goes by oldest to newest by default, reverse it
 
                             for file in vods:
-                                # if file in events.values:
                                 if file in pl.Series(events['Filename'].unique()).to_list():
                                     kills = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['ChampionKill'])))
                                     deaths = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['Death'])))
@@ -160,6 +159,7 @@ async def homepage():
                                     elif gamemode == 'RUBY_TRIAL_2': gamemode = "VEIGAR'S EVIL"
                                     elif gamemode == 'CLASSIC': gamemode = 'DRAFT'
                                     elif gamemode == 'CHERRY': gamemode = 'ARENA'
+                                    elif gamemode == 'KIWI': gamemode = 'MAYHEM'
 
                                     with games:
                                         with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
@@ -185,7 +185,6 @@ async def homepage():
                                             with ui.item_section():
                                                 ui.item_label(gamemode)
                                             with ui.item_section().props('side'):
-                                                # if file not in favVods.values:
                                                 with ui.row():
                                                     if file not in pl.Series(favVods['Name']).to_list():
                                                         ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -207,7 +206,6 @@ async def homepage():
                                             with ui.item_section():
                                                 ui.item_label('-')
                                             with ui.item_section().props('side'):
-                                                # if file not in favVods.values:
                                                 with ui.row():
                                                     if file not in pl.Series(favVods['Name']).to_list():
                                                         ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -283,7 +281,7 @@ async def homepage():
 
                         if len(missingClipThumbs) > 0:
                             for thumb in missingClipThumbs:
-                                print(f"Removed {thumb}'s thumbnail, because its corresponding clip is missing.")
+                                logger.info("Removed %s's thumbnail, because its corresponding clip is missing.", thumb)
                                 os.remove(os.path.join('./thumbnails', f'{thumb}.webp'))
 
                     if hasFiles(CLIPPATH):
@@ -299,8 +297,15 @@ async def homepage():
                     def updateSettings(button):
                         settings.update({'username': usernameInput.value, 'vodFolderSizeLimit': int(maxVodSelect.value)})
                         with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f: json.dump(settings, f)
+
+                        if not os.path.exists('./obs'):
+                            if keyring.get_password('LiveClient', 'port') != port.value or keyring.get_password('LiveClient', 'websocketPassword') != websocketPassword.value:
+                                keyring.set_password('LiveClient', 'port', int(float(port.value)))
+                                keyring.set_password('LiveClient', 'websocketPassword', websocketPassword.value)
                         
                         ui.notify('Settings updated successfully!', type = 'positive')
+                        logger.info('Settings updated successfully!')
+                        
                         button.disable()
                     
                     def compareSettings():
@@ -309,13 +314,28 @@ async def homepage():
                             else: button.disable()
                         else: button.disable()
 
+                        if not os.path.exists('obs'):
+                            if port.value == None or websocketPassword.value == None: button.disable()
+                            elif keyring.get_password('LiveClient', 'port') != port.value or keyring.get_password('LiveClient', 'websocketPassword') != websocketPassword.value:
+                                if len(websocketPassword.value) != 0: button.enable()
+                                else: button.disable()
+                            else: button.disable()
+
                     ui.label('League of Legends username (not including tagline):')
                     usernameInput = ui.input(value = settings.get('username'), validation = {'Input too short': lambda v: len(v) >= 3, 'Input too long': lambda v: len(v) <= 16, 'Invalid input': lambda v: '#' not in v}, on_change = lambda: compareSettings())
                     
                     ui.label('Maximum VOD Folder Size (GB):')
                     maxVodSelect = ui.number(value = int(settings.get('vodFolderSizeLimit')), min = 5, max = 100, precision = 0, suffix = ' GB', on_change = lambda: compareSettings())
+
+                    if not os.path.exists('obs'):
+                        ui.separator()
+                        ui.markdown('OBS Portable was not detected in the LiveClient folder. Please enter your OBS Websocket settings *(this is required for LiveClient to save events)*.')
+                        
+                        with ui.row():
+                            port = ui.number(label = 'Port', value = keyring.get_password('LiveClient', 'port'), min = 0, max = 49151, precision = 0, validation = {'Port cannot be empty': lambda v: v != None}, on_change = lambda: compareSettings())
+                            websocketPassword = ui.input(label = 'Password', value = keyring.get_password('LiveClient', 'websocketPassword'), validation = {'Password cannot be empty': lambda v: v != None and len(v) != 0}, password = True, password_toggle_button = True, on_change = lambda: compareSettings())
                     
-                    button = ui.button('Save', on_click = lambda: updateSettings(button))
+                    button = ui.button('Save', on_click = lambda: updateSettings(button)).classes('mt-4')
                     button.disable()
 
 @ui.page('/watch/vod/{fileName}')
@@ -399,11 +419,12 @@ async def watchVOD(fileName: str):
             
             @background_tasks.await_on_shutdown
             async def clipVideo(notif):
+                logger.info('Clipping %s...', fileName)
+
                 notif.message = 'Clipping video...'
                 notif.spinner = True
                 
-                now = datetime.datetime.now()
-                clipFileName = f'clip_{now.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
+                clipFileName = f'clip_{time.strftime("%Y-%m-%d %H-%M-%S")}.mp4'
 
                 command = ['./ffmpeg.exe', '-y', '-hide_banner', '-loglevel', 'error', '-stats', 
                            '-ss', str(minVal), '-to', str(maxVal), 
@@ -430,6 +451,8 @@ async def watchVOD(fileName: str):
                     except asyncio.IncompleteReadError: break
 
                 await process.wait()
+
+                logger.info('%s created successfully!', clipFileName)
                 
                 app.add_media_file(local_file = f'{CLIPPATH}/{clipFileName}', url_path = f'/clips/{clipFileName}', )
 
@@ -467,7 +490,6 @@ async def watchVOD(fileName: str):
             if fileName not in pl.Series(events['Filename'].unique()).to_list():
                 ui.label('No events data found for this VOD.').classes('self-center text-red-500 text-xl')
 
-
 @ui.page('/watch/clip/{fileName}')
 async def watchClip(fileName: str):
     with ui.splitter(horizontal = False, limits = (80, 90), value = 85, reverse = True).classes('w-full').props('before-class=overflow-hidden after-class=overflow-hidden') as splitter:
@@ -476,17 +498,20 @@ async def watchClip(fileName: str):
                 home = ui.tab('Home', icon='home')
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
-            path = f'/clips/{fileName}.mp4'
+            if os.path.exists(f'CLIPPATH/{fileName}.mp4'): path = f'/clips/{fileName}.mp4'
+            else:
+                correctFileExtension = [f for f in os.listdir(CLIPPATH) if os.path.isfile(os.path.join(CLIPPATH, f)) and fileName in f][0]
+                path = f'/clips/{correctFileExtension}'
+                print(path)
+
             ui.video(path).classes('mx-3 w-full').props('controls controlslist="nodownload noremoteplayback" disablepictureinpicture')
 
             def highlightVideo():
-                absolutePath = f'{os.path.abspath(os.path.join(CLIPPATH, fileName))}.mp4'
-                print(absolutePath)
+                if os.path.exists(f'CLIPPATH/{fileName}.mp4'): absolutePath = f'{os.path.abspath(os.path.join(CLIPPATH, fileName))}.mp4'
+                else: absolutePath = os.path.abspath(os.path.join(CLIPPATH, correctFileExtension))
 
-                if os.path.exists(absolutePath):
-                    subprocess.run(['explorer', '/select,', absolutePath], check=True) # ignore if it returns exit status 1
-                else:
-                    print('File not found')
+                if os.path.exists(absolutePath): subprocess.run(['explorer', '/select,', absolutePath], check=True) # ignore if it returns exit status 1
+                else: logger.warning('Explorer was unable to find %s to highlight it.', absolutePath)
             
             with ui.row().classes('w-full'):
                 ui.space()
@@ -494,5 +519,25 @@ async def watchClip(fileName: str):
                 ui.space()
 
 if __name__ == '__main__':
+    import logging
+    
+    logger = logging.getLogger(__name__)
+
+    os.makedirs('./data/logs', exist_ok = True)
+
+    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    ch = logging.StreamHandler()
+
+    logger.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+
     freeze_support()
     ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True, favicon='favicon.ico')

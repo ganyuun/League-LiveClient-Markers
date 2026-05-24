@@ -1,4 +1,4 @@
-from League_LiveClient_Markers import VODPATH, SETTINGSPATH
+from League_LiveClient_Markers import LOGPATH, VODPATH, SETTINGSPATH
 import send2trash, os, polars as pl, time, json
 
 FAVSPATH = 'data/favoritedVODs.csv'
@@ -10,8 +10,7 @@ if (os.path.exists(SETTINGSPATH)):
 else: sizeLimit = 50 # vod folder size limit is 50gb unless otherwise specified
 
 def delSpecificVid(fileName):
-    if os.path.exists(os.path.join(VODPATH, fileName)):
-        send2trash.send2trash(os.path.join(VODPATH, fileName))
+    if os.path.exists(os.path.join(VODPATH, fileName)): send2trash.send2trash(os.path.join(VODPATH, fileName))
 
 def vodFolderSize():
     folderSize = 0
@@ -22,10 +21,9 @@ def vodFolderSize():
             folderSize += os.path.getsize(fp)
     
     folderSize = round(folderSize / (1024 ** 3), 3) # convert to gb
-    print(f'VOD folder is {folderSize} GB')
 
-    if folderSize > sizeLimit: print(f'VOD folder size is above the limit of {sizeLimit} GB')
-    else: print(f'VOD folder size is not above the limit of {sizeLimit} GB')
+    if folderSize > sizeLimit: logger.info(f'VOD folder is {folderSize} GB, and above the limit of {sizeLimit} GB.')
+    else: logger.info(f'VOD folder is {folderSize} GB, and not above the limit of {sizeLimit} GB.')
 
     return folderSize
 
@@ -42,7 +40,7 @@ def delOldVids():
     nonFavs = []
 
     for file in vods:
-        if file in favVods: print(f"Removing {file} from candidates for deletion, since it's a favorite")
+        if file in favVods: logger.info(f"Removing {file} from candidates for deletion, since it's a favorite.")
         else: nonFavs.append(file)
     
     for file in nonFavs:
@@ -52,19 +50,35 @@ def delOldVids():
             break
         
         send2trash.send2trash(os.path.join(VODPATH, file))
-        print(f'Deleting {file}. Folder is now {size}')
+        logger.info(f'Deleting {file}. Folder is now {size}.')
         vods.remove(file)
 
 if __name__ == '__main__':
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    ch = logging.StreamHandler()
+
+    logger.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+    
     if os.path.exists(FAVSPATH):
-        favVods = pl.read_csv(FAVSPATH)
-        favVods = favVods['Name'].to_list()
-        print('Favorite VODs:', favVods)
+        favVods = pl.read_csv(FAVSPATH)['Name'].to_list()
+        logger.info('Favorite VODs: %s', favVods)
 
         size = vodFolderSize()
         if size > sizeLimit: delOldVids()
-        else: print('Exiting...')
+        else: logger.info('Exiting...\n-------------------\n')
         time.sleep(7)
     else:
-        print("favoritedVODs.csv doesn't exist. Exiting...")
+        logger.warning("favoritedVODs.csv doesn't exist. Exiting...\n-------------------\n")
         time.sleep(7)
