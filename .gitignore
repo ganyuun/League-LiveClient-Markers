@@ -17,4 +17,5 @@ autoDel.ps1
 *.exe
 *.spec
 *.iss
+*.ps1
 .python-version

@@ -241,14 +241,7 @@ async def homepage():
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
-                                    vods = []
-
-                                    for file in os.listdir(VODPATH):
-                                        itemPath = os.path.join(VODPATH, file)
-                                        if os.path.isfile(itemPath):
-                                            vods.append(file)
-                                    
-                                    vods.reverse() # vods goes by oldest to newest by default, reverse it
+                                    vods = pl.read_database("SELECT DISTINCT Filename FROM events WHERE Status = 'Trash' ORDER BY Filename DESC", connection = con)['Filename'].to_list()
 
                                     for file in vods:
                                         trashInfo = trash.filter(pl.col('Filename').is_in([file]))
@@ -459,7 +452,7 @@ async def watchVOD(fileName: str):
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
             path = f'/vods/{fileName}'
-            events = pl.read_database(f"SELECT * FROM events WHERE Filename = '{fileName}' AND Filename != '-'", connection = con)
+            events = pl.read_database(f"SELECT * FROM events WHERE Filename = '{fileName}' AND Champion != '-'", connection = con)
             
             if os.path.exists('./ffmpeg.exe') and os.path.exists('./ffprobe.exe'):
                 command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']
