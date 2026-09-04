@@ -55,24 +55,6 @@ async def homepage():
 
                     def handle_item_click_VODs(file): ui.navigate.to(f'/watch/vod/{file}')
 
-                    def handle_del_button_VODS(file):
-                        with ui.dialog() as dialog, ui.card():
-                            def delVod(file):
-                                if os.path.exists(os.path.join(VODPATH, file)):
-                                    ui.notify(f"{file} sent to the trash. It will be deleted permanently in 7 days!", type = 'positive')
-                                    delSpecificVid(file)
-                                    dialog.close()
-                                    ui.navigate.reload()
-                                else:
-                                    ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
-
-                            ui.label(f'Are you sure you want to put {file} in the trash?')
-                            with ui.row().classes('self-center'):
-                                ui.button('Yes', color = 'red', on_click = lambda: delVod(file))
-                                ui.space()
-                                ui.button('No', on_click = dialog.close)
-                        dialog.open()
-
                     with ui.tabs().classes('w-full') as vodPageTabs:
                         savedVods = ui.tab('Saved VODs')
                         trash = ui.tab('Trash')
@@ -97,6 +79,24 @@ async def homepage():
 
                                     logger.info('Added %s to favorites!', file)
                                     event.sender.props('icon=star')
+
+                            def handle_del_button_VODS(file):
+                                with ui.dialog() as dialog, ui.card():
+                                    def delVod(file):
+                                        if os.path.exists(os.path.join(VODPATH, file)):
+                                            ui.notify(f"{file} sent to the trash. It will be deleted permanently in 7 days!", type = 'positive')
+                                            delSpecificVid(file, permanent = False)
+                                            dialog.close()
+                                            ui.navigate.reload()
+                                        else:
+                                            ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
+        
+                                    ui.label(f'Are you sure you want to put {file} in the trash?')
+                                    with ui.row().classes('self-center'):
+                                        ui.button('Yes', color = 'red', on_click = lambda: delVod(file))
+                                        ui.space()
+                                        ui.button('No', on_click = dialog.close)
+                                dialog.open()
 
                             def createVodList():
                                 with vodDiv:
@@ -124,6 +124,10 @@ async def homepage():
                                         itemPath = os.path.join(VODPATH, file)
                                         if os.path.isfile(itemPath):
                                             vods.append(file)
+                                    
+                                    trashVods = pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Status = 'Trash'", connection = con)['Filename'].to_list()
+
+                                    for video in trashVods: vods.remove(video)
                                     
                                     # ensure all elements in the database are only files that still exist in the VODs folder
                                     existingFavVods = pl.read_database("SELECT DISTINCT Name FROM favorites", connection = con).filter( pl.col('Name').is_in(vods) ).sort('Name', descending = True)
@@ -214,10 +218,29 @@ async def homepage():
 
                             def handle_restore_button(file):
                                 if os.path.exists(os.path.join(VODPATH, file)):
-                                    cur.execute(f"UPDATE events SET Status = Active WHERE Filename = '{file}'")
+                                    cur.execute(f"UPDATE events SET Status = 'Active', Expires = NULL WHERE Filename = '{file}'")
                                     con.commit()
+
                                     ui.navigate.reload()
                                     ui.notify(f'{file} restored!', type = 'positive')
+
+                            def handle_del_button_trash(file):
+                                with ui.dialog() as dialog, ui.card():
+                                    def delVod(file):
+                                        if os.path.exists(os.path.join(VODPATH, file)):
+                                            ui.notify(f"{file} deleted!", type = 'positive')
+                                            delSpecificVid(file, permanent = True)
+                                            dialog.close()
+                                            ui.navigate.reload()
+                                        else:
+                                            ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
+        
+                                    ui.label(f'Are you sure you want to delete {file} permanently?')
+                                    with ui.row().classes('self-center'):
+                                        ui.button('Yes', color = 'red', on_click = lambda: delVod(file))
+                                        ui.space()
+                                        ui.button('No', on_click = dialog.close)
+                                dialog.open()
 
                             def createVodTrashList():
                                 with vodTrashDiv:
@@ -293,7 +316,7 @@ async def homepage():
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
                                                             ui.button(color = 'green', icon = 'restore_from_trash').on('click.stop', lambda e, file = file: handle_restore_button(file))
-                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_trash(file))
                                         else:
                                             with trashGames:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
@@ -312,7 +335,7 @@ async def homepage():
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
                                                             ui.button(color = 'green', icon = 'restore_from_trash').on('click.stop', lambda e, file = file: handle_restore_button(file))
-                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_trash(file))
 
                             if len(trash) > 0: createVodTrashList()
                             else:

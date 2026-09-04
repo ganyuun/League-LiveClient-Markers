@@ -1,5 +1,5 @@
 from League_LiveClient_Markers import LOGPATH, VODPATH, SETTINGSPATH, DBPATH, migrateToSQLite
-import send2trash, os, polars as pl, time, json, sqlite3, csv
+import send2trash, os, polars as pl, time, json, sqlite3
 
 FAVSPATH = 'data/favoritedVODs.csv'
 
@@ -9,14 +9,20 @@ if (os.path.exists(SETTINGSPATH)):
         sizeLimit = int(settings.get('vodFolderSizeLimit'))
 else: sizeLimit = 50 # vod folder size limit is 50gb unless otherwise specified
 
-def delSpecificVid(file):
+def delSpecificVid(file, path = VODPATH, permanent = False):
     con = sqlite3.connect(DBPATH)
     cur = con.cursor()
 
-    if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
-        cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
+    if permanent:
+        os.remove(os.path.join(path, file))
+        if path == VODPATH: cur.execute(f"DELETE FROM events WHERE Filename = '{file}'")
     else:
-        cur.execute(f"UPDATE events SET Status = 'Trash' WHERE Filename = '{file}'")
+        if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
+            cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
+        else:
+            cur.execute(f"UPDATE events SET Status = 'Trash' WHERE Filename = '{file}'")
+
+    con.commit()
 
 def vodFolderSize():
     folderSize = 0
