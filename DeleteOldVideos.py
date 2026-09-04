@@ -1,5 +1,5 @@
-from League_LiveClient_Markers import LOGPATH, VODPATH, SETTINGSPATH
-import send2trash, os, polars as pl, time, json
+from League_LiveClient_Markers import LOGPATH, VODPATH, SETTINGSPATH, DBPATH, migrateToSQLite
+import send2trash, os, polars as pl, time, json, sqlite3, csv
 
 FAVSPATH = 'data/favoritedVODs.csv'
 
@@ -9,8 +9,14 @@ if (os.path.exists(SETTINGSPATH)):
         sizeLimit = int(settings.get('vodFolderSizeLimit'))
 else: sizeLimit = 50 # vod folder size limit is 50gb unless otherwise specified
 
-def delSpecificVid(fileName):
-    if os.path.exists(os.path.join(VODPATH, fileName)): send2trash.send2trash(os.path.join(VODPATH, fileName))
+def delSpecificVid(file):
+    con = sqlite3.connect(DBPATH)
+    cur = con.cursor()
+
+    if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
+        cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
+    else:
+        cur.execute(f"UPDATE events SET Status = 'Trash' WHERE Filename = '{file}'")
 
 def vodFolderSize():
     folderSize = 0
@@ -20,14 +26,14 @@ def vodFolderSize():
             fp = os.path.join(path, f)
             folderSize += os.path.getsize(fp)
     
-    folderSize = round(folderSize / (1024 ** 3), 3) # convert to gb
-
-    if folderSize > sizeLimit: logger.info(f'VOD folder is {folderSize} GB, and above the limit of {sizeLimit} GB.')
-    else: logger.info(f'VOD folder is {folderSize} GB, and not above the limit of {sizeLimit} GB.')
+    folderSize = round(folderSize / (1024 ** 3), 3) # byte > GB conversion
 
     return folderSize
 
 def delOldVids():
+    con = sqlite3.connect(DBPATH)
+    cur = con.cursor()
+
     vods = []
 
     for entry in os.listdir(VODPATH):
@@ -36,22 +42,72 @@ def delOldVids():
     
     vods.sort() # make sure vods are sorted oldest to newest
 
-    # create new list, filtering out favorites
-    nonFavs = []
+    # create list of vods in folder, minus favorites
+    if os.path.exists(FAVSPATH):
+        nonFavs = [vod for vod in vods if vod not in pl.read_csv(FAVSPATH)['Name'].to_list()]
+    else:
+        nonFavs = [vod for vod in vods if vod not in pl.read_database("SELECT * FROM favorites", connection = con)['Name'].to_list()]
 
-    for file in vods:
-        if file in favVods: logger.info(f"Removing {file} from candidates for deletion, since it's a favorite.")
-        else: nonFavs.append(file)
-    
-    for file in nonFavs:
-        size = vodFolderSize()
+    logger.info(f"Removed all favorites from list of candidates for deletion.")
 
-        if size <= sizeLimit:
-            break
-        
-        send2trash.send2trash(os.path.join(VODPATH, file))
-        logger.info(f'Deleting {file}. Folder is now {size}.')
-        vods.remove(file)
+    if os.path.exists(FAVSPATH):
+        for file in nonFavs:
+            size = vodFolderSize()
+
+            if size <= sizeLimit: break
+            
+            send2trash.send2trash(os.path.join(VODPATH, file))
+            logger.info(f'Deleting {file}. Folder is now {size}.')
+            vods.remove(file)
+    else:
+        expiring = pl.read_database("SELECT Filename, Status, Expires FROM events WHERE Status = 'Trash' AND Expires >= date('now')", connection = con)['Filename'].unique().to_list()
+        logger.info('VODs in the trash that have yet to expire: %s', expiring)
+
+        expiredNow = pl.read_database("SELECT Filename, Status, Expires FROM events WHERE Status = 'Trash' AND Expires <= date('now')", connection = con)['Filename'].unique().to_list()
+        logger.info("Expired VODs: %s", expiredNow)
+                
+        if len(expiredNow) > 0:
+            for vod in expiredNow:
+                try:
+                    os.remove(os.path.join(VODPATH, vod))
+                    nonFavs.remove(vod)
+                except Exception as e:
+                    logger.warning("Failed to remove %s:", e)
+            if len(expiredNow) == 1: cur.execute(f"DELETE FROM events WHERE Filename = '{expiredNow}'")
+            else: cur.execute(f"DELETE FROM events WHERE Filename IN {tuple(expiredNow)}")
+            logger.info("Permanently deleted VODs that have been in the trash for 7 days.")
+
+        expiringVodSize = 0
+
+        for vod in expiring:
+            expiringVodSize += os.path.getsize(os.path.join(VODPATH, vod)) / (1024 ** 3)
+
+        anticipatedFolderSize = vodFolderSize() - round(expiringVodSize, 3)
+
+        if anticipatedFolderSize > sizeLimit:
+            toRemove = []
+
+            for file in nonFavs:
+                anticipatedFolderSize -= os.path.getsize(os.path.join(VODPATH, file)) / (1024 ** 3)
+                logger.info("Added %s as a candidate for deletion to be permanently deleted in 7 days. The folder will be %.3f GB after its deletion.", file, anticipatedFolderSize)
+
+                if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
+                    cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
+                else: toRemove.append(file)
+
+                if round(anticipatedFolderSize, 3) <= sizeLimit: break
+
+            if len(toRemove) == 1:
+                toRemove = toRemove[0]
+                cur.execute(f"UPDATE events SET Status = 'Trash', Expires = date('now', '+7 days') WHERE Filename = '{toRemove}'")
+            elif len(toRemove) > 1:
+                cur.execute(f"UPDATE events SET Status = 'Trash', Expires = date('now', '+7 days') WHERE Filename IN {tuple(toRemove)}")
+
+            con.commit()
+
+            logger.info("VOD folder will be %s GB after the following VODs are deleted in 7 days: %s", anticipatedFolderSize, toRemove)
+        else: logger.info("VOD folder will be %s GB (under the %s GB limit) after VODs that are currently in the trash are deleted.", anticipatedFolderSize, sizeLimit)
+
 
 if __name__ == '__main__':
     import logging
@@ -70,15 +126,15 @@ if __name__ == '__main__':
 
     logger.addHandler(ch)
     logger.addHandler(fh)
-    
-    if os.path.exists(FAVSPATH):
-        favVods = pl.read_csv(FAVSPATH)['Name'].to_list()
-        logger.info('Favorite VODs: %s', favVods)
 
-        size = vodFolderSize()
-        if size > sizeLimit: delOldVids()
-        else: logger.info('Exiting...\n-------------------\n')
-        time.sleep(7)
-    else:
-        logger.warning("favoritedVODs.csv doesn't exist. Exiting...\n-------------------\n")
-        time.sleep(7)
+    if os.path.exists('./data/events.csv') or os.path.exists('./data/favoritedVODs.csv'):
+        migrateToSQLite()
+
+    folderSize = vodFolderSize()
+
+    if folderSize > sizeLimit: 
+        logger.info("VOD folder is %s GB, and above the limit of %s GB.", folderSize, sizeLimit)
+        delOldVids()
+    else: logger.info('VOD folder size does not exceed the size limit. Exiting...\n-------------------\n')
+
+    time.sleep(7)

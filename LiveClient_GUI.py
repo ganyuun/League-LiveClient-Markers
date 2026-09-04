@@ -1,13 +1,16 @@
-import os, polars as pl, time, math, subprocess, asyncio, json, keyring
+import os, polars as pl, time, math, subprocess, asyncio, json, keyring, sqlite3
 from platform import system
 from nicegui import app, ui, run, background_tasks
 from multiprocessing import freeze_support
 from keyring.backends.Windows import WinVaultKeyring
 
-from League_LiveClient_Markers import LOGPATH, VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH
+from League_LiveClient_Markers import LOGPATH, VODPATH, EVENTPATH, CLIPPATH, SETTINGSPATH, DBPATH, migrateToSQLite
 from DeleteOldVideos import FAVSPATH, delSpecificVid
 minVal = 0
 maxVal = 0
+
+con = sqlite3.connect(DBPATH)
+cur = con.cursor()
 
 keyring.set_keyring(WinVaultKeyring())
 
@@ -21,19 +24,9 @@ app.add_media_files('/champIcons', './ddragon')
 app.add_media_files('/vods', VODPATH)
 app.add_media_files('/clips', CLIPPATH)
 
-if (os.path.exists(EVENTPATH)): app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
-else:
-    with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
-        headers = pl.DataFrame({'Filename': [], 'Champion': [], 'EventName': [], 'EventTime': [], 'Gamemode': []})
-        headers.write_csv(f, include_header = True)
-    app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
-
+if os.path.exists(EVENTPATH): app.add_static_file(local_file = EVENTPATH, url_path = '/events.csv')
 if (os.path.exists(FAVSPATH)): app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
-else:
-    with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-        favVods = pl.DataFrame({'Name': ''})
-        favVods.write_csv(f, include_header = True)
-    app.add_static_file(local_file = FAVSPATH, url_path='/favs.csv')
+if os.path.exists(DBPATH): app.add_static_file(local_file = DBPATH, url_path = '/data.db')
 
 if (os.path.exists(SETTINGSPATH)): app.add_static_file(local_file = SETTINGSPATH, url_path = '/settings.json')
 else:
@@ -58,170 +51,280 @@ async def homepage():
         with splitter.after:
             with ui.tab_panels(tabs, value = vodsTab).classes('w-full'):
                 with ui.tab_panel(vodsTab):
-                    ui.label('Saved VODs').classes('font-bold text-2xl')
+                    favVods = pl.read_database('SELECT DISTINCT * FROM favorites', connection = con)
 
-                    events = pl.read_csv(EVENTPATH)
-                    favVods = pl.read_csv(FAVSPATH)
-
-                    with ui.element('div').classes('w-full') as vodDiv: loadingVod = ui.spinner(size='lg')
-                    
                     def handle_item_click_VODs(file): ui.navigate.to(f'/watch/vod/{file}')
 
-                    def handle_button_click_VODS(event, file):
-                        favVods = pl.read_csv(FAVSPATH)
-
-                        if file in favVods['Name'].to_list():
-                            filteredVods = favVods.filter(pl.col('Name') != file)
-                            filteredVods = filteredVods.sort('Name', descending = True)
-                            logger.info('Removed %s from favorites. FavVods is now %s.', file, filteredVods['Name'].to_list())
-                            event.sender.props('icon=star_border')
-
-                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-                                filteredVods.write_csv(f, include_header = True)
-                        else:
-                            newFav = pl.DataFrame({'Name': [file]})
-                            favVods = pl.concat([favVods, newFav])
-                            favVods = favVods.sort('Name', descending = True)
-                            logger.info('Added %s to favorites! FavVods is now %s.', file, favVods['Name'].to_list())
-                            event.sender.props('icon=star')
-
-                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-                                favVods.write_csv(f, include_header = True)
-                        
                     def handle_del_button_VODS(file):
                         with ui.dialog() as dialog, ui.card():
                             def delVod(file):
                                 if os.path.exists(os.path.join(VODPATH, file)):
-                                    ui.notify(f'{file} sent to recycling bin.', type = 'positive')
+                                    ui.notify(f"{file} sent to the trash. It will be deleted permanently in 7 days!", type = 'positive')
                                     delSpecificVid(file)
                                     dialog.close()
                                     ui.navigate.reload()
                                 else:
                                     ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
 
-                            ui.label(f'Are you sure you want to delete {file}?')
+                            ui.label(f'Are you sure you want to put {file} in the trash?')
                             with ui.row().classes('self-center'):
                                 ui.button('Yes', color = 'red', on_click = lambda: delVod(file))
                                 ui.space()
                                 ui.button('No', on_click = dialog.close)
                         dialog.open()
 
-                    def createVodList():
-                        with vodDiv:
-                            loadingVod.delete()
-                            games = ui.list().props('bordered separator')
+                    with ui.tabs().classes('w-full') as vodPageTabs:
+                        savedVods = ui.tab('Saved VODs')
+                        trash = ui.tab('Trash')
+                    with ui.tab_panels(vodPageTabs, value = savedVods).classes('w-full'):
+                        with ui.tab_panel(savedVods).classes('w-full'):
+                            events = pl.read_database("SELECT * FROM events WHERE Status = 'Active'", connection = con)
 
-                            with games:
-                                with ui.row():
-                                    ui.item_label('Game').props('header').classes('text-bold')
-                                    ui.space()
-                                    ui.item_label('Icon').props('header').classes('text-bold')
-                                    ui.space()
-                                    ui.item_label('Champion').props('header').classes('text-bold')
-                                    ui.space()
-                                    ui.item_label('KDA').props('header').classes('text-bold')
-                                    ui.space()
-                                    ui.item_label('Gamemode').props('header').classes('text-bold')
-                                    ui.space()
-                                    ui.item_label('Actions').props('header').classes('text-bold')
-                                ui.separator()
-                            
-                            vods = []
+                            with ui.element('div').classes('w-full') as vodDiv: loadingVod = ui.spinner(size='lg')
 
-                            for file in os.listdir(VODPATH):
-                                itemPath = os.path.join(VODPATH, file)
-                                if os.path.isfile(itemPath):
-                                    vods.append(file)
-                            
-                            # ensure all elements in the .csv file are only files that still exist in the VODs folder
-                            existingFavVods = favVods.filter(pl.col('Name').is_in(vods))
-                            existingFavVods = existingFavVods.sort('Name', descending = True)
-                            logger.info('existingFavVods: %s', existingFavVods['Name'].to_list())
-                            
-                            with open(FAVSPATH, mode = 'w', encoding = 'utf8') as f:
-                                existingFavVods.write_csv(f, include_header = True)
-                            
-                            vods.reverse() # vods goes by oldest to newest by default, reverse it
+                            def handle_button_click_VODS(event, file):
+                                favVods = pl.read_database("SELECT DISTINCT Name FROM favorites", connection = con)
 
-                            for file in vods:
-                                if file in pl.Series(events['Filename'].unique()).to_list():
-                                    kills = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['ChampionKill'])))
-                                    deaths = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['Death'])))
-                                    assists = len(events.filter(pl.col('Filename').is_in([file]) & pl.col('EventName').is_in(['Assist'])))
+                                if file in favVods['Name'].to_list():
+                                    cur.execute(f"DELETE FROM favorites WHERE Name = '{file}'")
+                                    con.commit()
 
-                                    kda = f'{kills}/{deaths}/{assists}'
+                                    logger.info('Removed %s from favorites.', file)
+                                    event.sender.props('icon=star_border')
+                                else:    
+                                    cur.execute(f"INSERT INTO favorites (Name) VALUES ('{file}')")
+                                    con.commit()
 
-                                    champion = pl.Series(events.filter(pl.col('Filename').is_in([file])).select('Champion')).to_list()[0]
-                                    if champion == 'MonkeyKing' or champion == 'Monkey King': champion = 'Wukong'
+                                    logger.info('Added %s to favorites!', file)
+                                    event.sender.props('icon=star')
 
-                                    gamemode = pl.Series(events.filter(pl.col('Filename').is_in([file])).select('Gamemode')).to_list()[0]
+                            def createVodList():
+                                with vodDiv:
+                                    loadingVod.delete()
+                                    games = ui.list().props('bordered separator')
+
+                                    with games:
+                                        with ui.row():
+                                            ui.item_label('Game').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Icon').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Champion').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('KDA').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Gamemode').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Actions').props('header').classes('text-bold')
+                                        ui.separator()
                                     
-                                    # change gamemode names from how they're referred to in the API
-                                    if gamemode == 'RUBY': gamemode = 'DOOMBOTS'
-                                    elif gamemode == 'RUBY_TRIAL_1': gamemode = "VEIGAR'S CURSE"
-                                    elif gamemode == 'RUBY_TRIAL_2': gamemode = "VEIGAR'S EVIL"
-                                    elif gamemode == 'CLASSIC': gamemode = 'DRAFT'
-                                    elif gamemode == 'CHERRY': gamemode = 'ARENA'
-                                    elif gamemode == 'KIWI': gamemode = 'MAYHEM'
+                                    vods = []
 
-                                    with games:
-                                        with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                            with ui.item_section():
-                                                ui.item_label(file)
-                                            with ui.item_section():
-                                                if champion == 'Wukong':
-                                                    ui.image('/champIcons/MonkeyKing.png').classes('size-8')
-                                                # remove spaces from champion names
-                                                elif ' ' in champion:
-                                                    champ = champion.replace(' ', '')
-                                                    ui.image(f'/champIcons/{champ}.png').classes('size-8')
-                                                # champions with apostrophes in their names should have them removed, and then capitalized
-                                                elif "'" in champion:
-                                                    champ = champion.replace("'", '').capitalize()
-                                                    ui.image(f'/champIcons/{champ}.png').classes('size-8')
-                                                else:
-                                                    ui.image(f'/champIcons/{champion}.png').classes('size-8')
-                                            with ui.item_section():
-                                                ui.item_label(champion)
-                                            with ui.item_section():
-                                                ui.item_label(kda)
-                                            with ui.item_section():
-                                                ui.item_label(gamemode)
-                                            with ui.item_section().props('side'):
-                                                with ui.row():
-                                                    if file not in pl.Series(favVods['Name']).to_list():
-                                                        ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                    else:
-                                                        ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                    
-                                                    ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
-                                else:
-                                    with games:
-                                        with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                            with ui.item_section():
-                                                ui.item_label(file)
-                                            with ui.item_section():
-                                                ui.item_label('No events data')
-                                            with ui.item_section():
-                                                ui.item_label('-')
-                                            with ui.item_section():
-                                                ui.item_label('-')
-                                            with ui.item_section():
-                                                ui.item_label('-')
-                                            with ui.item_section().props('side'):
-                                                with ui.row():
-                                                    if file not in pl.Series(favVods['Name']).to_list():
-                                                        ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                    else:
-                                                        ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
-                                                    
-                                                    ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
-                    
-                    if hasFiles(VODPATH): await run.io_bound(createVodList)
-                    else:
-                        loadingVod.delete()
-                        ui.label('No VODs found! Play a game first!').classes('self-center text-xl')
+                                    for file in os.listdir(VODPATH):
+                                        itemPath = os.path.join(VODPATH, file)
+                                        if os.path.isfile(itemPath):
+                                            vods.append(file)
+                                    
+                                    # ensure all elements in the database are only files that still exist in the VODs folder
+                                    existingFavVods = pl.read_database("SELECT DISTINCT Name FROM favorites", connection = con).filter( pl.col('Name').is_in(vods) ).sort('Name', descending = True)
+                                    existingFavVods.write_database("favorites", connection = f'sqlite:///{DBPATH}', if_table_exists = 'replace')
+                                    logger.info('existingFavVods: %s', existingFavVods['Name'].to_list())
+                                    
+                                    vods.reverse() # vods goes by oldest to newest by default, reverse it
 
+                                    for file in vods:
+                                        vodInfo = events.filter(pl.col('Filename').is_in([file]))
+
+                                        if len(vodInfo) > 0 and vodInfo['Champion'].to_list()[0] != '-':
+                                            kda = f"{len(vodInfo.filter(pl.col('EventName') == 'ChampionKill'))}/{len(vodInfo.filter(pl.col('EventName') == 'Death'))}/{len(vodInfo.filter(pl.col('EventName') == 'Assist'))}"
+
+                                            champion = vodInfo['Champion'].to_list()[0]
+                                            
+                                            match champion:
+                                                case 'MonkeyKing': champion = 'Wukong'
+                                                case 'Monkey King': champion = 'Wukong'
+
+                                            gamemode = vodInfo['Gamemode'].to_list()[0]
+                                            
+                                            match (gamemode):
+                                                case 'RUBY': gamemode = 'DOOMBOTS'
+                                                case 'RUBY_TRIAL_1': gamemode = "VEIGAR'S CURSE"
+                                                case 'RUBY_TRIAL_2': gamemode = "VEIGAR'S EVIL"
+                                                case 'CLASSIC': gamemode = 'DRAFT'
+                                                case 'CHERRY': gamemode = 'ARENA'
+                                                case 'KIWI': gamemode = 'MAYHEM'
+
+                                            with games:
+                                                with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
+                                                    with ui.item_section():
+                                                        ui.item_label(file)
+                                                    with ui.item_section():
+                                                        if champion == 'Wukong':
+                                                            ui.image('/champIcons/MonkeyKing.png').classes('size-8') # special Wukong case :)
+                                                        elif ' ' in champion:
+                                                            ui.image(f'/champIcons/{champion.replace(' ', '')}.png').classes('size-8')
+                                                        elif "'" in champion:
+                                                            ui.image(f'/champIcons/{champion.replace("'", '').capitalize()}.png').classes('size-8')
+                                                        else:
+                                                            ui.image(f'/champIcons/{champion}.png').classes('size-8')
+                                                    with ui.item_section():
+                                                        ui.item_label(champion)
+                                                    with ui.item_section():
+                                                        ui.item_label(kda)
+                                                    with ui.item_section():
+                                                        ui.item_label(gamemode)
+                                                    with ui.item_section().props('side'):
+                                                        with ui.row():
+                                                            if file not in favVods['Name'].to_list():
+                                                                ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                            else:
+                                                                ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                            
+                                                            ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+                                        else:
+                                            with games:
+                                                with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
+                                                    with ui.item_section():
+                                                        ui.item_label(file)
+                                                    with ui.item_section():
+                                                        ui.item_label('No events data')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section().props('side'):
+                                                        with ui.row():
+                                                            if file not in favVods['Name'].to_list():
+                                                                ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                            else:
+                                                                ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
+                                                            
+                                                            ui.button(color = 'none', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+                            
+                            if hasFiles(VODPATH): createVodList()
+                            else:
+                                loadingVod.delete()
+                                ui.label('No VODs found! Play a game first!').classes('self-center text-xl')
+                        with ui.tab_panel(trash).classes('w-full'):
+                            trash = pl.read_database("SELECT * FROM events WHERE Status = 'Trash'", connection = con)
+
+                            with ui.element('div').classes('w-full') as vodTrashDiv: trashSpinner = ui.spinner(size='lg')
+
+                            def handle_restore_button(file):
+                                if os.path.exists(os.path.join(VODPATH, file)):
+                                    cur.execute(f"UPDATE events SET Status = Active WHERE Filename = '{file}'")
+                                    con.commit()
+                                    ui.navigate.reload()
+                                    ui.notify(f'{file} restored!', type = 'positive')
+
+                            def createVodTrashList():
+                                with vodTrashDiv:
+                                    trashSpinner.delete()
+                                    trashGames = ui.list().props('bordered separator').classes('w-full')
+
+                                    with trashGames:
+                                        with ui.row():
+                                            ui.item_label('Game').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Icon').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Champion').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('KDA').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Gamemode').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Deletion Date').props('header').classes('text-bold')
+                                            ui.space()
+                                            ui.item_label('Actions').props('header').classes('text-bold')
+                                        ui.separator()
+                                    
+                                    vods = []
+
+                                    for file in os.listdir(VODPATH):
+                                        itemPath = os.path.join(VODPATH, file)
+                                        if os.path.isfile(itemPath):
+                                            vods.append(file)
+                                    
+                                    vods.reverse() # vods goes by oldest to newest by default, reverse it
+
+                                    for file in vods:
+                                        trashInfo = trash.filter(pl.col('Filename').is_in([file]))
+                                        expires = trashInfo['Expires'].to_list()[0]
+
+                                        if len(trashInfo) > 0 and trashInfo['Champion'].to_list()[0] != '-':
+                                            kda = f"{len(trashInfo.filter(pl.col('EventName') == 'ChampionKill'))}/{len(trashInfo.filter(pl.col('EventName') == 'Death'))}/{len(trashInfo.filter(pl.col('EventName') == 'Assist'))}"
+
+                                            champion = trashInfo['Champion'].to_list()[0]
+
+                                            match champion:
+                                                case 'MonkeyKing': champion = 'Wukong'
+                                                case 'Monkey King': champion = 'Wukong'
+
+                                            gamemode = trashInfo['Gamemode'].to_list()[0]
+                                            
+                                            # change gamemode names from how they're referred to in the API
+                                            match (gamemode):
+                                                case 'RUBY': gamemode = 'DOOMBOTS'
+                                                case 'RUBY_TRIAL_1': gamemode = "VEIGAR'S CURSE"
+                                                case 'RUBY_TRIAL_2': gamemode = "VEIGAR'S EVIL"
+                                                case 'CLASSIC': gamemode = 'DRAFT'
+                                                case 'CHERRY': gamemode = 'ARENA'
+                                                case 'KIWI': gamemode = 'MAYHEM'
+
+                                            with trashGames:
+                                                with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
+                                                    with ui.item_section():
+                                                        ui.item_label(file)
+                                                    with ui.item_section():
+                                                        if champion == 'Wukong':
+                                                            ui.image('/champIcons/MonkeyKing.png').classes('size-8')
+                                                        elif ' ' in champion:
+                                                            champ = champion.replace(' ', '') # remove spaces from champion names
+                                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
+                                                        elif "'" in champion:
+                                                            champ = champion.replace("'", '').capitalize() # remove apostrophes from names for file
+                                                            ui.image(f'/champIcons/{champ}.png').classes('size-8')
+                                                        else:
+                                                            ui.image(f'/champIcons/{champion}.png').classes('size-8')
+                                                    with ui.item_section():
+                                                        ui.item_label(champion)
+                                                    with ui.item_section():
+                                                        ui.item_label(kda)
+                                                    with ui.item_section():
+                                                        ui.item_label(gamemode)
+                                                    with ui.item_section():
+                                                        ui.item_label(expires)
+                                                    with ui.item_section().props('side'):
+                                                        with ui.row():
+                                                            ui.button(color = 'green', icon = 'restore_from_trash').on('click.stop', lambda e, file = file: handle_restore_button(file))
+                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+                                        else:
+                                            with trashGames:
+                                                with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
+                                                    with ui.item_section():
+                                                        ui.item_label(file)
+                                                    with ui.item_section():
+                                                        ui.item_label('No events data')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label(expires)
+                                                    with ui.item_section().props('side'):
+                                                        with ui.row():
+                                                            ui.button(color = 'green', icon = 'restore_from_trash').on('click.stop', lambda e, file = file: handle_restore_button(file))
+                                                            ui.button(color = 'red', icon = 'delete').on('click.stop', lambda e, file = file: handle_del_button_VODS(file))
+
+                            if len(trash) > 0: createVodTrashList()
+                            else:
+                                vodTrashDiv.delete()
+                                ui.label('You have no VODs in the trash!').classes('self-center text-xl')
                 with ui.tab_panel(clipsTab):
                     ui.label('Saved Clips').classes('font-bold text-2xl')
 
@@ -287,10 +390,16 @@ async def homepage():
                                 logger.info("Removed %s's thumbnail, because its corresponding clip is missing.", thumb)
                                 os.remove(os.path.join('./thumbnails', f'{thumb}.webp'))
 
-                    if hasFiles(CLIPPATH):
-                        clipGrid()
-                        background_tasks.create(createThumbnails())
-                    else: ui.label('No clips found! Clip something first!').classes('self-center text-xl')
+                    if os.path.exists('./ffmpeg.exe') and os.path.exists('./ffprobe.exe'):
+                        if hasFiles(CLIPPATH):
+                            clipGrid()
+                            background_tasks.create(createThumbnails())
+                        else: ui.label('No clips found! Clip something first!').classes('self-center text-xl')
+                    else:
+                        ui.notify('ffmpeg and/or ffprobe not found. Thumbnails and clips cannot be generated!', type = 'negative')
+                        logger.error('ffmpeg and/or ffprobe not found. Thumbnails and clips cannot be generated!')
+
+                        ui.label('ffmpeg and/or ffprobe not found! Thumbnails and clips cannot be generated!').classes('self-center text-red-500 text-xl')
 
                 with ui.tab_panel(settingsTab):
                     ui.label('Settings').classes('font-bold text-2xl')
@@ -350,17 +459,22 @@ async def watchVOD(fileName: str):
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
             path = f'/vods/{fileName}'
-            events = pl.read_csv(EVENTPATH)
+            events = pl.read_database(f"SELECT * FROM events WHERE Filename = '{fileName}' AND Filename != '-'", connection = con)
             
-            command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']
-            duration = subprocess.check_output(command, creationflags = creationFlags).decode('utf-8').strip()
-            duration = math.floor(float(duration))
+            if os.path.exists('./ffmpeg.exe') and os.path.exists('./ffprobe.exe'):
+                command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']
+
+                duration = subprocess.check_output(command, creationflags = creationFlags).decode('utf-8').strip()
+                duration = math.floor(float(duration))
+            else:
+                logger.error('ffmpeg and/or ffprobe not found. Clips cannot be generated!')
+                ui.notify('ffmpeg and/or ffprobe not found. Clips cannot be generated!', type = 'negative')
 
             async def seekVideo(seconds):
                 time = await ui.run_javascript(f'getHtmlElement({v.id}).currentTime')
                 v.seek(time + seconds)
             
-            if fileName in pl.Series(events['Filename'].unique()).to_list():
+            if len(events) > 0:
                 with ui.row().classes('w-full flex-col mx-3 2xl:flex-row'):
                     with ui.column().classes('w-full 2xl:grow-7 2xl:w-[50%]'):
                         v = ui.video(path).props('autoplay controls controlslist="nodownload noremoteplayback" disablepictureinpicture')
@@ -368,7 +482,7 @@ async def watchVOD(fileName: str):
                             ui.button('-5 sec', on_click = lambda: seekVideo(-5))
                             ui.button('+5 sec', on_click = lambda: seekVideo(5))
                     
-                    rows = events.filter(pl.col('Filename').is_in([fileName])).select(['EventName', 'EventTime'])
+                    rows = events.select(['EventName', 'EventTime'])
 
                     def handle_row_click(event):
                         clicked_row_data = event.args[1]
@@ -479,18 +593,20 @@ async def watchVOD(fileName: str):
                         ui.space()
                         ui.button('Open Clip in Explorer', on_click = lambda: subprocess.run(['explorer', '/select,', os.path.abspath(os.path.join(CLIPPATH, clipFileName))], check=True)) 
             
-            with ui.expansion('Clip!', icon='movie_creation', value = True). classes('mx-3 w-full'):
-                with ui.row().classes('w-full'):
-                    ui.space()
-                    ui.button('Clip', on_click = startClip)
+            if os.path.exists('./ffmpeg.exe') and os.path.exists('./ffprobe.exe'):
+                with ui.expansion('Clip!', icon='movie_creation', value = True). classes('mx-3 w-full'):
+                    with ui.row().classes('w-full'):
+                        ui.space()
+                        ui.button('Clip', on_click = startClip)
 
-                clipRange = ui.range(min = 0, max = duration, value = {'min' : 0, 'max': 20}, on_change = rangeMinMax).props('label-always').classes('w-full')
-                
-                ui.label().bind_text_from(clipRange, 'value', 
-                                        backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
-
+                    clipRange = ui.range(min = 0, max = duration, value = {'min' : 0, 'max': 20}, on_change = rangeMinMax).props('label-always').classes('w-full')
+                    
+                    ui.label().bind_text_from(clipRange, 'value', 
+                                            backward = lambda minConvert: f'{int(math.floor(minConvert["min"]) / 60):02d}:{(minConvert["min"] % 60):02d} to {int(math.floor(minConvert["max"]) / 60):02d}:{(minConvert["max"] % 60):02d}').classes('text-lg self-center')
+            else:
+                ui.label('ffmpeg and/or ffprobe not found. Clips cannot be generated.').classes('self-center text-red-500 text-xl')
             
-            if fileName not in pl.Series(events['Filename'].unique()).to_list():
+            if fileName not in events['Filename'].unique().to_list():
                 ui.label('No events data found for this VOD.').classes('self-center text-red-500 text-xl')
 
 @ui.page('/watch/clip/{fileName}')
@@ -541,6 +657,9 @@ if __name__ == '__main__':
 
     logger.addHandler(ch)
     logger.addHandler(fh)
+
+    if os.path.exists(EVENTPATH) or os.path.exists(FAVSPATH):
+        migrateToSQLite()
 
     freeze_support()
     ui.run(title='LiveClient GUI', reload=False, native=True, window_size=(1600, 950), dark = True, favicon='favicon.ico')

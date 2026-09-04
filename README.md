@@ -1,11 +1,11 @@
 # League LiveClient Markers
 League LiveClient Markers.py is meant for use with [OBS Advanced Scene Switcher](https://obsproject.com/forum/resources/advanced-scene-switcher.395/) (and [OBS Websocket](https://github.com/obsproject/obs-websocket)) so that it automatically runs when conditions are met!
 
-This script connects to OBS Websocket to get the status and output path of the active recording, and Riot's [Live Client API](https://developer.riotgames.com/docs/lol#game-client-api_live-client-data-api) to get the player's username, chosen champion, and events that occur throughout the game. Once League of Legends is closed, events are filtered to find ones that only include you, and are then saved to a .csv file!
+This script connects to OBS Websocket to get the status and output path of the active recording, and Riot's [Live Client API](https://developer.riotgames.com/docs/lol#game-client-api_live-client-data-api) to get the player's username, chosen champion, and events that occur throughout the game. Once League of Legends is closed, events are filtered to find ones that only include you, and are then saved to a SQLite database!
 
 There's also a custom hotkey (CTRL + F1) to save a custom marker during a League game.
 
-This project also has a GUI made with [NiceGUI](https://nicegui.io/)! Through the GUI, you can watch all of your recordings and clips, view events associated to those recordings if any, and clip them.
+This project also has a GUI made with [NiceGUI](https://nicegui.io/)! Through the GUI, you can watch all of your recordings, view events associated to those recordings, and clip them.
 
 > [!WARNING]
 > This program has only been tested on Windows 10 and 11 x64 systems! It doesn't work on other platforms.
@@ -14,7 +14,7 @@ This project also has a GUI made with [NiceGUI](https://nicegui.io/)! Through th
 
 ## Installation
 
-### Using the Installer
+### Using the Installer (Recommended)
 
 1. Download and run the latest installer in the [Releases tab](https://github.com/ganyuun/League-LiveClient-Markers/releases)
 
@@ -22,7 +22,7 @@ This project also has a GUI made with [NiceGUI](https://nicegui.io/)! Through th
 
 3. Enable OBS Websocket (required for LiveClient to function!)
 
-After installing, open OBS > go to Tools > WebSocket Server Settings > Enable WebSocket Server, and allow OBS through only private network firewalls *(not public)*! If the Windows Security Alert doesn't pop up after clicking apply and OK, you might have to close and reopen OBS.
+To enable OBS Websocket after installation, open OBS > go to Tools > WebSocket Server Settings > Enable WebSocket Server, and allow OBS through only private network firewalls *(not public)*! If the Windows Security Alert doesn't pop up after clicking apply and OK, you might have to close and reopen OBS.
 
 Lastly, OBS portable is set up to minimize to tray! Try to minimize it instead of closing it, or LiveClient won't record your games automatically!
 

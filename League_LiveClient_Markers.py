@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring
+import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring, sqlite3, csv, send2trash
 from pynput import keyboard
 from keyring.backends.Windows import WinVaultKeyring
 
@@ -12,6 +12,7 @@ EVENTDATA = 'https://127.0.0.1:2999/liveclientdata/eventdata'
 VODPATH = './vods/'
 LOGPATH = f"./data/logs/log {time.strftime('%m-%d-%Y')}.txt"
 EVENTPATH = './data/events.csv'
+DBPATH = './data/data.db'
 SETTINGSPATH = './data/settings.json'
 CLIPPATH = './clips/'
 
@@ -269,20 +270,107 @@ def filterEvents(eventDict, username, output, champion):
     except Exception as e:
        logging.exception('')
 
-# write events to csv using pandas
-def writeToFile(event):
-    data = pl.DataFrame(event)
-    
+def migrateToSQLite():
+    import logging
+        
+    logger = logging.getLogger(__name__)
+
+    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    ch = logging.StreamHandler()
+
+    logger.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+
+    con = sqlite3.connect(DBPATH)
+    cur = con.cursor()
+
     if os.path.exists(EVENTPATH):
-        with open(EVENTPATH, mode = 'a', encoding = "utf8") as f:
-            data.write_csv(f, include_header = False)
+        try:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS events(
+                    Filename TEXT NOT NULL,
+                    Champion TEXT NOT NULL,
+                    EventName TEXT NOT NULL,
+                    EventTime TEXT NOT NULL,
+                    Gamemode TEXT NOT NULL,
+                    Status TEXT DEFAULT 'Active',
+                    Expires TIMESTAMP
+                );
+            ''')
+
+            file = open(EVENTPATH)
+            eventData = csv.reader(file)
+
+            cur.executemany('INSERT INTO events (Filename, Champion, EventName, EventTime, Gamemode) VALUES(?, ?, ?, ?, ?)', eventData)
+            cur.execute("DELETE FROM events WHERE Filename = 'Filename'") # header from .csv gets added in
+
+            con.commit()
+            file.close()
+            send2trash.send2trash(EVENTPATH)
+
+            logger.info('Successfully moved existing events to SQLite database!')
+        except Exception as e:
+            logger.warning("Failed to migrate events to SQLite database: %s", e)
     else:
+        try:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS events(
+                    Filename TEXT NOT NULL,
+                    Champion TEXT NOT NULL,
+                    EventName TEXT NOT NULL,
+                    EventTime TEXT NOT NULL,
+                    Gamemode TEXT NOT NULL,
+                    Status TEXT DEFAULT 'Active',
+                    Expires TIMESTAMP
+                );
+            ''')
+        except Exception as e:
+            logger.warning("Failed to create events table in SQLite database: %s", e)
+
+    if os.path.exists('./data/favoritedVODs.csv'):
+        try:
+            cur.execute('CREATE TABLE IF NOT EXISTS favorites( Name TEXT NOT NULL );')
+
+            file = open('data/favoritedVODs.csv')
+            favsData = csv.reader(file)
+
+            cur.executemany('INSERT INTO favorites (Name) VALUES(?)', favsData)
+            cur.execute("DELETE FROM favorites WHERE Name = 'Name'")
+
+            con.commit()
+            file.close()
+
+            send2trash.send2trash('./data/favoritedVODs.csv')
+    
+            logger.info('Successfully moved existing favorites to SQLite database!')
+        except Exception as e:
+            logger.warning('Failed to migrate favorites to SQLite database: %s', e)
+    else:
+        try: cur.execute('CREATE TABLE IF NOT EXISTS favorites( Name TEXT NOT NULL );')
+        except Exception as e: logger.warning("Failed to create favorites table in SQLite database: %s", e)
+
+# write events to database (or csv)
+def writeToFile(event):
+    if os.path.exists(EVENTPATH):
+        data = pl.DataFrame(event)
+
         with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
             data.write_csv(f, include_header = True)
+    else:
+        cur.executemany("INSERT INTO events (Filename, Champion, EventName, EventTime, Gamemode) VALUES(:Filename, :Champion, :EventName, :EventTime, :Gamemode)", event)
+        con.commit()
     
-    logger.info('Wrote events to events.csv!')
+    logger.info('Events saved!')
 
-# delete events in csv that are no longer in VOD folder
+# delete events for VODs that are no longer saved
 def delEvents(vodPath, eventPath):
     # assign filenames of vods in folder to list
     vods = []
@@ -290,14 +378,20 @@ def delEvents(vodPath, eventPath):
         itemPath = os.path.join(vodPath, file)
         if os.path.isfile(itemPath):
             vods.append(file)
-    vods.append('----') # this is file divider, don't want them to be removed
-    
-    # filter csv by Filename column
-    data = pl.read_csv(eventPath)
-    filteredData = data.filter(pl.col('Filename').is_in(vods))
 
-    with open(eventPath, mode = 'w', encoding = 'utf8') as f:
-        filteredData.write_csv(f, include_header = True)
+    if os.path.exists(EVENTPATH):
+        data = pl.read_csv(eventPath)
+        filteredData = data.filter(pl.col('Filename').is_in(vods))
+
+        with open(eventPath, mode = 'w', encoding = 'utf8') as f:
+            filteredData.write_csv(f, include_header = True)
+    else:
+        data = pl.read_database(f"SELECT * FROM events WHERE Filename NOT IN {tuple(vods)}", connection = con)['Filename'].to_list()
+
+        if len(data) == 1:
+            data = data[0]
+            cur.execute(f"DELETE FROM events WHERE Filename = '{data}'")
+        elif len(data) > 1: cur.execute(f"DELETE FROM events WHERE Filename IN {tuple(data)}")
 
     logger.info("Deleted events that don't exist in VODs folder (if any!)\n-------------------\n")
 
@@ -315,6 +409,9 @@ if __name__ == '__main__':
     import logging
     
     logger = logging.getLogger(__name__)
+
+    con = sqlite3.connect(DBPATH)
+    cur = con.cursor()
 
     os.makedirs('./data/logs', exist_ok = True)
 
@@ -347,10 +444,11 @@ if __name__ == '__main__':
             fieldnames, events = asyncio.run(main())
 
             if events != 'No events':
+                migrateToSQLite()
                 writeToFile(events)
                 delEvents(VODPATH, EVENTPATH)
             else:
-                logger.info('No events to write to .csv. Opening GUI...')
+                logger.info('No events to save. Opening GUI...')
         else:
             logger.info('OBS not recording! Opening GUI...\n-------------------\n')
     except ConnectionRefusedError:

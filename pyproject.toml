@@ -11,9 +11,12 @@ dependencies = [
     "logging>=0.4.9.6",
     "nicegui>=3.12.1",
     "obsws-python>=1.8.0",
+    "pandas>=2.3.3",
     "polars>=1.40.1",
+    "pyarrow>=25.0.1",
     "pynput>=1.8.2",
     "pythonnet>=3.0.5",
     "pywebview>=6.2.1",
     "send2trash>=2.1.0",
+    "sqlalchemy>=2.0.52",
 ]
