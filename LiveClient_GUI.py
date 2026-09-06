@@ -60,21 +60,19 @@ async def homepage():
                         trash = ui.tab('Trash')
                     with ui.tab_panels(vodPageTabs, value = savedVods).classes('w-full'):
                         with ui.tab_panel(savedVods).classes('w-full'):
-                            events = pl.read_database("SELECT * FROM videos WHERE Status = 'Active'", connection = con)
-
                             with ui.element('div').classes('w-full') as vodDiv: loadingVod = ui.spinner(size='lg')
 
                             def handle_button_click_VODS(event, file):
-                                favVods = pl.read_database("SELECT DISTINCT Name FROM favorites", connection = con)
+                                favVods = pl.read_database("SELECT DISTINCT Filename FROM favorites", connection = con)
 
-                                if file in favVods['Name'].to_list():
-                                    cur.execute(f"DELETE FROM favorites WHERE Name = '{file}'")
+                                if file in favVods['Filename'].to_list():
+                                    cur.execute("DELETE FROM favorites WHERE Filename = (?)", (file,))
                                     con.commit()
 
                                     logger.info('Removed %s from favorites.', file)
                                     event.sender.props('icon=star_border')
                                 else:    
-                                    cur.execute(f"INSERT INTO favorites (Name) VALUES ('{file}')")
+                                    cur.execute("INSERT INTO favorites (Filename) VALUES (?)", (file,))
                                     con.commit()
 
                                     logger.info('Added %s to favorites!', file)
@@ -261,7 +259,7 @@ async def homepage():
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
-                                    vods = pl.read_database("SELECT DISTINCT Filename FROM vods WHERE Status = 'Trash' ORDER BY Filename DESC", connection = con)['Filename'].to_list()
+                                    vods = pl.read_database("SELECT DISTINCT Filename FROM videos WHERE Status = 'Trash' ORDER BY Filename DESC", connection = con)['Filename'].to_list()
 
                                     for file in vods:
                                         trashInfo = trash.filter(pl.col('Filename') == file)

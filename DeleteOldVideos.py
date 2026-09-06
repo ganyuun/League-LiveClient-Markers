@@ -15,12 +15,9 @@ def delSpecificVid(file, path = VODPATH, permanent = False):
 
     if permanent:
         os.remove(os.path.join(path, file))
-        if path == VODPATH: cur.execute(f"DELETE FROM events WHERE Filename = '{file}'")
+        if path == VODPATH: cur.execute("DELETE FROM videos WHERE Filename = ?", (file,))
     else:
-        if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
-            cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
-        else:
-            cur.execute(f"UPDATE events SET Status = 'Trash' WHERE Filename = '{file}'")
+        cur.execute("UPDATE videos SET Status = 'Trash' WHERE Filename = ?", (file,))
 
     con.commit()
 
