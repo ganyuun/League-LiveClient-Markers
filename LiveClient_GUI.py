@@ -60,7 +60,7 @@ async def homepage():
                         trash = ui.tab('Trash')
                     with ui.tab_panels(vodPageTabs, value = savedVods).classes('w-full'):
                         with ui.tab_panel(savedVods).classes('w-full'):
-                            events = pl.read_database("SELECT * FROM events WHERE Status = 'Active'", connection = con)
+                            events = pl.read_database("SELECT * FROM videos WHERE Status = 'Active'", connection = con)
 
                             with ui.element('div').classes('w-full') as vodDiv: loadingVod = ui.spinner(size='lg')
 
@@ -115,40 +115,27 @@ async def homepage():
                                             ui.space()
                                             ui.item_label('Gamemode').props('header').classes('text-bold')
                                             ui.space()
+                                            ui.item_label('Result').props('header').classes('text-bold')
+                                            ui.space()
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
-                                    vods = []
+                                    vods = pl.read_database(f"SELECT Filename, Champion, KDA, Gamemode, Result FROM videos WHERE Status = 'Active' ORDER BY Filename DESC", connection = con)
+                                    vodsList = vods['Filename'].to_list()
 
-                                    for file in os.listdir(VODPATH):
-                                        itemPath = os.path.join(VODPATH, file)
-                                        if os.path.isfile(itemPath):
-                                            vods.append(file)
-                                    
-                                    trashVods = pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Status = 'Trash'", connection = con)['Filename'].to_list()
+                                    for file in vodsList:
+                                        vodInfo = vods.filter(pl.col('Filename') == file)
 
-                                    for video in trashVods: vods.remove(video)
-                                    
-                                    # ensure all elements in the database are only files that still exist in the VODs folder
-                                    existingFavVods = pl.read_database("SELECT DISTINCT Name FROM favorites", connection = con).filter( pl.col('Name').is_in(vods) ).sort('Name', descending = True)
-                                    existingFavVods.write_database("favorites", connection = f'sqlite:///{DBPATH}', if_table_exists = 'replace')
-                                    logger.info('existingFavVods: %s', existingFavVods['Name'].to_list())
-                                    
-                                    vods.reverse() # vods goes by oldest to newest by default, reverse it
+                                        if vodInfo.item(0, 'Champion') is not None:
+                                            kda = vodInfo.item(0, 'KDA')
 
-                                    for file in vods:
-                                        vodInfo = events.filter(pl.col('Filename').is_in([file]))
-
-                                        if len(vodInfo) > 0 and vodInfo['Champion'].to_list()[0] != '-':
-                                            kda = f"{len(vodInfo.filter(pl.col('EventName') == 'ChampionKill'))}/{len(vodInfo.filter(pl.col('EventName') == 'Death'))}/{len(vodInfo.filter(pl.col('EventName') == 'Assist'))}"
-
-                                            champion = vodInfo['Champion'].to_list()[0]
+                                            champion = vodInfo.item(0, 'Champion')
                                             
                                             match champion:
                                                 case 'MonkeyKing': champion = 'Wukong'
                                                 case 'Monkey King': champion = 'Wukong'
 
-                                            gamemode = vodInfo['Gamemode'].to_list()[0]
+                                            gamemode = vodInfo.item(0, 'Gamemode')
                                             
                                             match (gamemode):
                                                 case 'RUBY': gamemode = 'DOOMBOTS'
@@ -157,6 +144,8 @@ async def homepage():
                                                 case 'CLASSIC': gamemode = 'DRAFT'
                                                 case 'CHERRY': gamemode = 'ARENA'
                                                 case 'KIWI': gamemode = 'MAYHEM'
+
+                                            result = vodInfo.item(0, 'Result') if not None else '-'
 
                                             with games:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
@@ -177,9 +166,13 @@ async def homepage():
                                                         ui.item_label(kda)
                                                     with ui.item_section():
                                                         ui.item_label(gamemode)
+                                                    with ui.item_section():
+                                                        if result == 'Win': ui.item_label(result).classes('text-red-500')
+                                                        elif result == 'Loss': ui.item_label(result).classes('text-blue-400')
+                                                        else: ui.item_label('-')
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
-                                                            if file not in favVods['Name'].to_list():
+                                                            if file not in favVods['Filename'].to_list():
                                                                 ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
                                                             else:
                                                                 ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -198,9 +191,11 @@ async def homepage():
                                                         ui.item_label('-')
                                                     with ui.item_section():
                                                         ui.item_label('-')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
-                                                            if file not in favVods['Name'].to_list():
+                                                            if file not in favVods['Filename'].to_list():
                                                                 ui.button(color = 'none', icon = 'star_border').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
                                                             else:
                                                                 ui.button(color = 'none', icon = 'star').on('click.stop', lambda e, file = file: (handle_button_click_VODS(e, file)))
@@ -212,7 +207,7 @@ async def homepage():
                                 loadingVod.delete()
                                 ui.label('No VODs found! Play a game first!').classes('self-center text-xl')
                         with ui.tab_panel(trash).classes('w-full'):
-                            trash = pl.read_database("SELECT * FROM events WHERE Status = 'Trash'", connection = con)
+                            trash = pl.read_database("SELECT Filename, Champion, KDA, Gamemode, Result, Expires FROM videos WHERE Status = 'Trash'", connection = con)
 
                             with ui.element('div').classes('w-full') as vodTrashDiv: trashSpinner = ui.spinner(size='lg')
 
@@ -259,27 +254,28 @@ async def homepage():
                                             ui.space()
                                             ui.item_label('Gamemode').props('header').classes('text-bold')
                                             ui.space()
+                                            ui.item_label('Result').props('header').classes('text-bold')
+                                            ui.space()
                                             ui.item_label('Deletion Date').props('header').classes('text-bold')
                                             ui.space()
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
-                                    vods = pl.read_database("SELECT DISTINCT Filename FROM events WHERE Status = 'Trash' ORDER BY Filename DESC", connection = con)['Filename'].to_list()
+                                    vods = pl.read_database("SELECT DISTINCT Filename FROM vods WHERE Status = 'Trash' ORDER BY Filename DESC", connection = con)['Filename'].to_list()
 
                                     for file in vods:
-                                        trashInfo = trash.filter(pl.col('Filename').is_in([file]))
-                                        expires = trashInfo['Expires'].to_list()[0]
+                                        trashInfo = trash.filter(pl.col('Filename') == file)
+                                        expires = trashInfo.item(0, 'Expires')
 
-                                        if len(trashInfo) > 0 and trashInfo['Champion'].to_list()[0] != '-':
-                                            kda = f"{len(trashInfo.filter(pl.col('EventName') == 'ChampionKill'))}/{len(trashInfo.filter(pl.col('EventName') == 'Death'))}/{len(trashInfo.filter(pl.col('EventName') == 'Assist'))}"
-
-                                            champion = trashInfo['Champion'].to_list()[0]
+                                        if trashInfo.item(0, 'Champion') is not None:
+                                            kda = trashInfo.item(0, 'KDA')
+                                            champion = trashInfo.item(0, 'Champion')
 
                                             match champion:
                                                 case 'MonkeyKing': champion = 'Wukong'
                                                 case 'Monkey King': champion = 'Wukong'
 
-                                            gamemode = trashInfo['Gamemode'].to_list()[0]
+                                            gamemode = trashInfo.item(0, 'Gamemode')
                                             
                                             # change gamemode names from how they're referred to in the API
                                             match (gamemode):
@@ -289,6 +285,8 @@ async def homepage():
                                                 case 'CLASSIC': gamemode = 'DRAFT'
                                                 case 'CHERRY': gamemode = 'ARENA'
                                                 case 'KIWI': gamemode = 'MAYHEM'
+
+                                            result = trashInfo.item(0, 'Result')
 
                                             with trashGames:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
@@ -312,6 +310,10 @@ async def homepage():
                                                     with ui.item_section():
                                                         ui.item_label(gamemode)
                                                     with ui.item_section():
+                                                        if result == 'Win': ui.item_label(result).classes('text-red-500')
+                                                        elif result == 'Loss': ui.item_label(result).classes('text-blue-400')
+                                                        else: ui.item_label('-')
+                                                    with ui.item_section():
                                                         ui.item_label(expires)
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
@@ -324,6 +326,8 @@ async def homepage():
                                                         ui.item_label(file)
                                                     with ui.item_section():
                                                         ui.item_label('No events data')
+                                                    with ui.item_section():
+                                                        ui.item_label('-')
                                                     with ui.item_section():
                                                         ui.item_label('-')
                                                     with ui.item_section():
@@ -475,7 +479,7 @@ async def watchVOD(fileName: str):
                 home.on('click', lambda: ui.navigate.to('/'))
         with splitter.after:
             path = f'/vods/{fileName}'
-            events = pl.read_database(f"SELECT * FROM events WHERE Filename = '{fileName}' AND Champion != '-'", connection = con)
+            events = pl.read_database(f"SELECT * FROM events WHERE Filename = '{fileName}'", connection = con)
             
             if os.path.exists('./ffmpeg.exe') and os.path.exists('./ffprobe.exe'):
                 command = ['./ffprobe.exe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', f'{VODPATH}/{fileName}']

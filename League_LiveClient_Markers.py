@@ -1,4 +1,4 @@
-import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring, sqlite3, csv, send2trash
+import obsws_python as obs, os, json, time, asyncio, aiohttp, math, polars as pl, keyring, sqlite3, send2trash
 from pynput import keyboard
 from keyring.backends.Windows import WinVaultKeyring
 
@@ -66,12 +66,13 @@ async def getPlayerInfo():
                     data = await response.json()
                     
                     username = data.get('activePlayer', {}).get('riotIdGameName')
+                    tagline = data.get('activePlayer', {}).get('riotIdTagLine')
                     events = data.get('events', {}).get('Events', [])
 
                     # if getPlayerInfo() runs during League's loading screen, the script may get a KeyError, so raise an error to prevent the script from crashing
                     # prevent the function from continuing if there's no events either, since the loading screen ending is signified by a 'GameStart' event
                     if username == None or len(events) == 0:
-                        logger.info('getPlayerInfo() conditions not satisfied. Username = %s, and events = %s', username, events)
+                        logger.info('getPlayerInfo() conditions not satisfied. Username = %s#%s and events = %s', username, tagline, events)
                         raise KeyError
                     else:
                         champion = [d['championName'] for d in data['allPlayers'] if username in d.values()][0]
@@ -85,7 +86,7 @@ async def getPlayerInfo():
                             recordingDelay = 0
                             logger.info("More than two events detected, recording delay wasn't calculated.\n")
 
-                        logger.info('All League data received! %s %s %s\n', username, champion, gamemode)
+                        logger.info('All League data received! %s#%s %s %s\n', username, tagline, champion, gamemode)
 
                         # store username, in case getPlayerInfo() fails in the future
                         if (os.path.exists(SETTINGSPATH)):
@@ -94,7 +95,7 @@ async def getPlayerInfo():
 
                             if settings.get('username') != username:
                                 with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
-                                    settings.update({'username': username})
+                                    settings.update({'username': username, 'tagline': tagline})
                                     json.dump(settings, f)
                         else:
                             with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
@@ -175,7 +176,7 @@ async def isOBSrecording():
     else:
         return 'No events', outputPath
 
-# condition data to be written into .csv     
+# condition data
 def filterEvents(eventDict, username, output, champion):
     try: 
         if len(eventDict.get('Events', [])) >= 3: logger.info('FilterEvents running! Preview of current events: %s, %s, %s\n', eventDict.get('Events', [])[0], eventDict.get('Events', [])[1], eventDict.get('Events', [])[2])
@@ -270,6 +271,7 @@ def filterEvents(eventDict, username, output, champion):
     except Exception as e:
        logging.exception('')
 
+# move events in .csv to SQLite database
 def migrateToSQLite():
     import logging
         
@@ -292,28 +294,90 @@ def migrateToSQLite():
     con = sqlite3.connect(DBPATH)
     cur = con.cursor()
 
+    cur.execute("PRAGMA foreign_keys = ON")
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS videos(
+            Filename TEXT NOT NULL PRIMARY KEY,
+            Champion TEXT,
+            KDA TEXT,
+            Gamemode TEXT,
+            Result TEXT,
+            Status TEXT DEFAULT 'Active',
+            Expires TIMESTAMP DEFAULT NULL
+        );
+    ''')
+    
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS events(
+            Filename TEXT,
+            EventName TEXT,
+            EventTime TEXT,
+            FOREIGN KEY (Filename) REFERENCES videos(Filename)
+                ON DELETE CASCADE
+        );
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS favorites( 
+            Filename TEXT PRIMARY KEY,
+            FOREIGN KEY (Filename) REFERENCES videos(Filename)
+                ON DELETE CASCADE
+        );
+    ''')
+
+    cur.execute('''
+        CREATE TRIGGER IF NOT EXISTS setExpireDate 
+        AFTER UPDATE OF Status ON videos
+        FOR EACH ROW WHEN NEW.Status = 'Trash'
+        BEGIN
+            UPDATE videos
+            SET Expires = date('now', '+7 days')
+            WHERE Filename = NEW.Filename;
+        END;
+    ''')
+
+    cur.execute('''
+        CREATE TRIGGER IF NOT EXISTS removeExpireDate 
+        AFTER UPDATE OF Status ON videos
+        FOR EACH ROW WHEN NEW.Status != 'Trash'
+        BEGIN
+            UPDATE videos
+            SET Expires = NULL
+            WHERE Filename = NEW.Filename;
+        END;
+    ''')
+
+    videoList = []
+    
+    for file in os.listdir(VODPATH):
+        itemPath = os.path.join(VODPATH, file)
+        if os.path.isfile(itemPath): videoList.append(file)
+
     if os.path.exists(EVENTPATH):
+        eventsDf = pl.read_csv(EVENTPATH, has_header = True)
+
         try:
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS events(
-                    Filename TEXT NOT NULL,
-                    Champion TEXT NOT NULL,
-                    EventName TEXT NOT NULL,
-                    EventTime TEXT NOT NULL,
-                    Gamemode TEXT NOT NULL,
-                    Status TEXT DEFAULT 'Active',
-                    Expires TIMESTAMP
-                );
-            ''')
+            # populating videos table
+            for vod in videoList:
+                eventFilter = eventsDf.filter(pl.col('Filename') == vod)
 
-            file = open(EVENTPATH)
-            eventData = csv.reader(file)
+                if len(eventFilter) > 0:
+                    champion = eventFilter.item(0, 'Champion')
+                    kda = f"{len(eventFilter.filter( pl.col('EventName') == 'ChampionKill' ))}/{len(eventFilter.filter( pl.col('EventName') == 'Death' ))}/{len(eventFilter.filter( pl.col('EventName') == 'Assist' ))}"
+                    gamemode = eventFilter.item(0, 'Gamemode')
 
-            cur.executemany('INSERT INTO events (Filename, Champion, EventName, EventTime, Gamemode) VALUES(?, ?, ?, ?, ?)', eventData)
-            cur.execute("DELETE FROM events WHERE Filename = 'Filename'") # header from .csv gets added in
+                    cur.execute(f"""
+                        INSERT INTO videos (Filename, Champion, KDA, Gamemode) 
+                        VALUES (?, ?, ?, ?)
+                    """, (vod, champion, kda, gamemode))
+                else:
+                    cur.execute(f"INSERT INTO videos (Filename) VALUES (?)", (vod,))
 
-            con.commit()
-            file.close()
+            # populating events table
+            cur.executemany("INSERT INTO events VALUES(?, ?, ?)", 
+                eventsDf.filter(pl.col('Filename').is_in(videoList)).select('Filename', 'EventName', 'EventTime').rows())
+
             send2trash.send2trash(EVENTPATH)
 
             logger.info('Successfully moved existing events to SQLite database!')
@@ -321,51 +385,69 @@ def migrateToSQLite():
             logger.warning("Failed to migrate events to SQLite database: %s", e)
     else:
         try:
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS events(
-                    Filename TEXT NOT NULL,
-                    Champion TEXT NOT NULL,
-                    EventName TEXT NOT NULL,
-                    EventTime TEXT NOT NULL,
-                    Gamemode TEXT NOT NULL,
-                    Status TEXT DEFAULT 'Active',
-                    Expires TIMESTAMP
-                );
-            ''')
+            videoTuple = [(vod,) for vod in videoList]
+            cur.executemany("INSERT INTO videos (Filename) VALUES (?)", videoTuple)
         except Exception as e:
             logger.warning("Failed to create events table in SQLite database: %s", e)
 
     if os.path.exists('./data/favoritedVODs.csv'):
         try:
-            cur.execute('CREATE TABLE IF NOT EXISTS favorites( Name TEXT NOT NULL );')
+            favorites = set(pl.read_csv('./data/favoritedVODs.csv', has_header = True)['Name'].unique().to_list())
+            favorites = list(favorites.intersection(videoList))
+            favsInFolder = [(fav,) for fav in favorites]
 
-            file = open('data/favoritedVODs.csv')
-            favsData = csv.reader(file)
-
-            cur.executemany('INSERT INTO favorites (Name) VALUES(?)', favsData)
-            cur.execute("DELETE FROM favorites WHERE Name = 'Name'")
-
-            con.commit()
-            file.close()
+            cur.executemany("INSERT INTO favorites VALUES(?)", favsInFolder)
+            logger.info('Successfully moved existing favorites to SQLite database!')
 
             send2trash.send2trash('./data/favoritedVODs.csv')
-    
-            logger.info('Successfully moved existing favorites to SQLite database!')
         except Exception as e:
             logger.warning('Failed to migrate favorites to SQLite database: %s', e)
-    else:
-        try: cur.execute('CREATE TABLE IF NOT EXISTS favorites( Name TEXT NOT NULL );')
-        except Exception as e: logger.warning("Failed to create favorites table in SQLite database: %s", e)
 
-# write events to database (or csv)
-def writeToFile(event):
+    con.commit()
+
+# write events to database (or csv if migration failed)
+async def writeToFile(event):
     if os.path.exists(EVENTPATH):
         data = pl.DataFrame(event)
 
         with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
             data.write_csv(f, include_header = True)
     else:
-        cur.executemany("INSERT INTO events (Filename, Champion, EventName, EventTime, Gamemode) VALUES(:Filename, :Champion, :EventName, :EventTime, :Gamemode)", event)
+        eventDf = pl.DataFrame(event)
+
+        filename = eventDf.item(0, 'Filename')
+        champion = eventDf.item(0, 'Champion')
+        kda = f"{len(eventDf.filter( pl.col('EventName') == 'ChampionKill' ))}/{len(eventDf.filter( pl.col('EventName') == 'Death' ))}/{len(eventDf.filter( pl.col('EventName') == 'Assist' ))}"
+        gamemode = eventDf.item(0, 'Gamemode')
+        result = None
+
+        if gamemode != 'PRACTICETOOL':
+            with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8'):
+                settings = json.load(f)
+                username = settings.get('username')
+                tagline = settings.get('tagline')
+                puuid = settings.get('puuid')
+
+            if puuid is None:
+                if None in {username, tagline}: result = None
+                else:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getpuuid", json = {"username": username, "tagline": tagline}, headers = {"Content-Type": "application/json"}) as response:
+                            if response.status == 200:
+                                puuid = response.json()['result']
+
+                                with open(SETTINGSPATH, mode = 'w', encoding = 'utf-8') as f:
+                                    settings.update({'puuid': puuid})
+                                    json.dump(settings, f)
+
+                                logger.info("Got user's PUUID from Riot API: %s")
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"puuid": puuid}):
+                    result = response.json()['result']
+            
+        cur.execute("INSERT INTO videos VALUES(?, ?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
+        cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
         con.commit()
     
     logger.info('Events saved!')
@@ -401,6 +483,7 @@ async def main():
 
     if events != 'No events':
         fieldnames, events = filterEvents(events, user, outputPath, champ)
+        await writeToFile(events)
         return fieldnames, events
     else:
         return 'No fields', 'No events'
@@ -430,6 +513,8 @@ if __name__ == '__main__':
     logger.addHandler(fh)
 
     try:
+        migrateToSQLite()
+
         cl = obs.ReqClient(host=host, port=port, password=password)
         ev = obs.EventClient(host=host, port=port, password=password)
 
@@ -444,8 +529,6 @@ if __name__ == '__main__':
             fieldnames, events = asyncio.run(main())
 
             if events != 'No events':
-                migrateToSQLite()
-                writeToFile(events)
                 delEvents(VODPATH, EVENTPATH)
             else:
                 logger.info('No events to save. Opening GUI...')

@@ -52,7 +52,7 @@ def delOldVids():
     if os.path.exists(FAVSPATH):
         nonFavs = [vod for vod in vods if vod not in pl.read_csv(FAVSPATH)['Name'].to_list()]
     else:
-        nonFavs = [vod for vod in vods if vod not in pl.read_database("SELECT * FROM favorites", connection = con)['Name'].to_list()]
+        nonFavs = [vod for vod in vods if vod not in pl.read_database("SELECT * FROM favorites", connection = con)['Filename'].to_list()]
 
     logger.info(f"Removed all favorites from list of candidates for deletion.")
 
@@ -66,21 +66,20 @@ def delOldVids():
             logger.info(f'Deleting {file}. Folder is now {size}.')
             vods.remove(file)
     else:
-        expiring = pl.read_database("SELECT Filename, Status, Expires FROM events WHERE Status = 'Trash' AND Expires >= date('now')", connection = con)['Filename'].unique().to_list()
+        expiring = pl.read_database("SELECT Filename FROM videos WHERE Status = 'Trash' AND Expires >= date('now')", connection = con)['Filename'].to_list()
         logger.info('VODs in the trash that have yet to expire: %s', expiring)
 
-        expiredNow = pl.read_database("SELECT Filename, Status, Expires FROM events WHERE Status = 'Trash' AND Expires <= date('now')", connection = con)['Filename'].unique().to_list()
+        expiredNow = pl.read_database("SELECT Filename FROM videos WHERE Status = 'Trash' AND Expires <= date('now')", connection = con)['Filename'].to_list()
         logger.info("Expired VODs: %s", expiredNow)
                 
         if len(expiredNow) > 0:
             for vod in expiredNow:
                 try:
                     os.remove(os.path.join(VODPATH, vod))
+                    cur.execute("DELETE FROM videos WHERE Filename = ?", (vod,))
                     nonFavs.remove(vod)
                 except Exception as e:
                     logger.warning("Failed to remove %s:", e)
-            if len(expiredNow) == 1: cur.execute(f"DELETE FROM events WHERE Filename = '{expiredNow}'")
-            else: cur.execute(f"DELETE FROM events WHERE Filename IN {tuple(expiredNow)}")
             logger.info("Permanently deleted VODs that have been in the trash for 7 days.")
 
         expiringVodSize = 0
@@ -95,25 +94,17 @@ def delOldVids():
 
             for file in nonFavs:
                 anticipatedFolderSize -= os.path.getsize(os.path.join(VODPATH, file)) / (1024 ** 3)
+                
+                cur.execute("UPDATE events SET Status = 'Trash' WHERE Filename = ?", (file,))
+                toRemove.append(file)
                 logger.info("Added %s as a candidate for deletion to be permanently deleted in 7 days. The folder will be %.3f GB after its deletion.", file, anticipatedFolderSize)
 
-                if len(pl.read_database(f"SELECT DISTINCT Filename FROM events WHERE Filename = '{file}'", connection = con)) == 0:
-                    cur.execute(f"INSERT INTO events ('Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode', 'Status', 'Expires') VALUES ('{file}', '-', '-', '-', '-', 'Trash', date('now', '+7 days'))")
-                else: toRemove.append(file)
-
                 if round(anticipatedFolderSize, 3) <= sizeLimit: break
-
-            if len(toRemove) == 1:
-                toRemove = toRemove[0]
-                cur.execute(f"UPDATE events SET Status = 'Trash', Expires = date('now', '+7 days') WHERE Filename = '{toRemove}'")
-            elif len(toRemove) > 1:
-                cur.execute(f"UPDATE events SET Status = 'Trash', Expires = date('now', '+7 days') WHERE Filename IN {tuple(toRemove)}")
-
-            con.commit()
 
             logger.info("VOD folder will be %s GB after the following VODs are deleted in 7 days: %s", anticipatedFolderSize, toRemove)
         else: logger.info("VOD folder will be %s GB (under the %s GB limit) after VODs that are currently in the trash are deleted.", anticipatedFolderSize, sizeLimit)
 
+        con.commit()
 
 if __name__ == '__main__':
     import logging
