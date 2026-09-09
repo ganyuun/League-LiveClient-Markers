@@ -410,8 +410,8 @@ async def writeToFile(event):
     if os.path.exists(EVENTPATH):
         data = pl.DataFrame(event)
 
-        with open(EVENTPATH, mode = 'w', encoding = 'utf8') as f:
-            data.write_csv(f, include_header = True)
+        with open(EVENTPATH, mode = 'a', encoding = 'utf8') as f:
+            data.write_csv(f, include_header = False)
     else:
         eventDf = pl.DataFrame(event)
 
