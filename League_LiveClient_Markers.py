@@ -383,7 +383,7 @@ def migrateToSQLite():
             logger.info('Successfully moved existing events to SQLite database!')
         except Exception as e:
             logger.warning("Failed to migrate events to SQLite database: %s", e)
-    else:
+    elif len(pl.read_database("SELECT * FROM videos", connection = con)) == 0:
         try:
             videoTuple = [(vod,) for vod in videoList]
             cur.executemany("INSERT INTO videos (Filename) VALUES (?)", videoTuple)
@@ -491,6 +491,7 @@ async def main():
 
 if __name__ == '__main__':
     import logging
+    from logging.handlers import TimedRotatingFileHandler
     
     logger = logging.getLogger(__name__)
 
@@ -499,7 +500,7 @@ if __name__ == '__main__':
 
     os.makedirs('./data/logs', exist_ok = True)
 
-    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    fh = TimedRotatingFileHandler(LOGPATH, when = 'D', interval = 1, backupCount = 7)
     ch = logging.StreamHandler()
 
     logger.setLevel(logging.DEBUG)
@@ -510,8 +511,8 @@ if __name__ == '__main__':
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
 
-    logger.addHandler(ch)
     logger.addHandler(fh)
+    logger.addHandler(ch)
 
     try:
         migrateToSQLite()

@@ -105,9 +105,10 @@ def delOldVids():
 
 if __name__ == '__main__':
     import logging
+    from logging.handlers import TimedRotatingFileHandler
     
     logger = logging.getLogger(__name__)
-    fh = logging.FileHandler(LOGPATH, encoding='utf-8')
+    fh = TimedRotatingFileHandler(LOGPATH, when = 'D', interval = 1, backupCount = 7)
     ch = logging.StreamHandler()
 
     logger.setLevel(logging.DEBUG)
