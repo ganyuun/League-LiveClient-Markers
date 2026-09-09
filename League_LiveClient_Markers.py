@@ -421,7 +421,8 @@ async def writeToFile(event):
         gamemode = eventDf.item(0, 'Gamemode')
         result = None
 
-        if gamemode != 'PRACTICETOOL':
+        # jade = league classic, which isn't accessible thru riot's API
+        if gamemode not in {'PRACTICETOOL', 'JADE'}:
             with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8'):
                 settings = json.load(f)
                 username = settings.get('username')
@@ -444,7 +445,7 @@ async def writeToFile(event):
 
             async with aiohttp.ClientSession() as session:
                 async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"puuid": puuid}):
-                    result = response.json()['result']
+                    if response.status == 200: result = response.json()['result']
             
         cur.execute("INSERT INTO videos VALUES(?, ?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
         cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
