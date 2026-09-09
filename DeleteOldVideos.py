@@ -92,14 +92,14 @@ def delOldVids():
             for file in nonFavs:
                 anticipatedFolderSize -= os.path.getsize(os.path.join(VODPATH, file)) / (1024 ** 3)
                 
-                cur.execute("UPDATE events SET Status = 'Trash' WHERE Filename = ?", (file,))
+                cur.execute("UPDATE videos SET Status = 'Trash' WHERE Filename = ?", (file,))
                 toRemove.append(file)
                 logger.info("Added %s as a candidate for deletion to be permanently deleted in 7 days. The folder will be %.3f GB after its deletion.", file, anticipatedFolderSize)
 
                 if round(anticipatedFolderSize, 3) <= sizeLimit: break
 
-            logger.info("VOD folder will be %s GB after the following VODs are deleted in 7 days: %s", anticipatedFolderSize, toRemove)
-        else: logger.info("VOD folder will be %s GB (under the %s GB limit) after VODs that are currently in the trash are deleted.", anticipatedFolderSize, sizeLimit)
+            logger.info("VOD folder will be %s GB after the following VODs are deleted in 7 days: %s", round(anticipatedFolderSize, 3), toRemove)
+        else: logger.info("VOD folder will be %s GB (under the %s GB limit) after VODs that are currently in the trash are deleted.", round(anticipatedFolderSize, 3), sizeLimit)
 
         con.commit()
 

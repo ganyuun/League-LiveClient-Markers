@@ -447,7 +447,7 @@ async def writeToFile(event):
                 async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"puuid": puuid}):
                     if response.status == 200: result = response.json()['result']
             
-        cur.execute("INSERT INTO videos VALUES(?, ?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
+        cur.execute("INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result) VALUES(?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
         cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
         con.commit()
     
@@ -501,18 +501,14 @@ if __name__ == '__main__':
     os.makedirs('./data/logs', exist_ok = True)
 
     fh = TimedRotatingFileHandler(LOGPATH, when = 'D', interval = 1, backupCount = 7)
-    ch = logging.StreamHandler()
 
     logger.setLevel(logging.DEBUG)
     fh.setLevel(logging.DEBUG)
-    ch.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
     fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
 
     logger.addHandler(fh)
-    logger.addHandler(ch)
 
     try:
         migrateToSQLite()
