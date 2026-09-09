@@ -93,7 +93,7 @@ async def getPlayerInfo():
                             with open(SETTINGSPATH, mode = 'r', encoding = 'utf8') as f:
                                 settings = json.load(f)
 
-                            if settings.get('username') != username:
+                            if settings.get('username') != username or settings.get('tagline') != tagline:
                                 with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
                                     settings.update({'username': username, 'tagline': tagline})
                                     json.dump(settings, f)
@@ -421,31 +421,40 @@ async def writeToFile(event):
         gamemode = eventDf.item(0, 'Gamemode')
         result = None
 
-        # jade = league classic, which isn't accessible thru riot's API
-        if gamemode not in {'PRACTICETOOL', 'JADE'}:
-            with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8'):
+        # jade = league classic, which isn't accessible thru Riot's API
+        # kiwi = aram mayhem, also not accessible thru Riot's API
+        if gamemode not in {'PRACTICETOOL', 'JADE', 'KIWI'}:
+            with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
                 settings = json.load(f)
-                username = settings.get('username')
-                tagline = settings.get('tagline')
-                puuid = settings.get('puuid')
+                username = settings.get('username', None)
+                tagline = settings.get('tagline', None)
+                puuid = settings.get('puuid', None)
 
             if puuid is None:
-                if None in {username, tagline}: result = None
-                else:
+                if None not in {username, tagline}:
                     async with aiohttp.ClientSession() as session:
                         async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getpuuid", json = {"username": username, "tagline": tagline}, headers = {"Content-Type": "application/json"}) as response:
                             if response.status == 200:
-                                puuid = response.json()['result']
-
-                                with open(SETTINGSPATH, mode = 'w', encoding = 'utf-8') as f:
-                                    settings.update({'puuid': puuid})
-                                    json.dump(settings, f)
-
-                                logger.info("Got user's PUUID from Riot API: %s")
-
+                                resp = await response.json()
+                                puuid = resp.get('puuid', None)
+        
+                                if puuid is not None:
+                                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
+                                        settings = json.load(f)
+                                    
+                                    with open(SETTINGSPATH, mode = 'w', encoding = 'utf-8') as f:
+                                        settings.update({'puuid': puuid})
+                                        json.dump(settings, f)
+        
+                                    logger.info("Successfully saved user's PUUID!")
+            
             async with aiohttp.ClientSession() as session:
-                async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"puuid": puuid}):
-                    if response.status == 200: result = response.json()['result']
+                async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"username": username, "tagline": tagline, "puuid": puuid}) as response:
+                    if response.status == 200: 
+                        resp = await response.json()
+                        result = resp.get('result')
+                        logger.info("Successfully received the result of the user's last game!")
+                        
             
         cur.execute("INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result) VALUES(?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
         cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
