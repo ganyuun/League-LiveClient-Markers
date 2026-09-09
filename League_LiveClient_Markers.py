@@ -99,7 +99,7 @@ async def getPlayerInfo():
                                     json.dump(settings, f)
                         else:
                             with open(SETTINGSPATH, mode = 'w', encoding = 'utf8') as f:
-                                settings = {'username': username, 'vodFolderSizeLimit': 50}
+                                settings = {'username': username, 'tagline': tagline, 'vodFolderSizeLimit': 50}
                                 json.dump(settings, f)
                                 
                         return username, champion
