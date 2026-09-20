@@ -87,7 +87,12 @@ async def homepage():
                                             dialog.close()
                                             ui.navigate.reload()
                                         else:
-                                            ui.notify(f"{file} doesn't exist in specified VOD path.", type = 'negative')
+                                            cur.execute("DELETE FROM videos WHERE Filename = ?", (file,))
+                                            ui.notify(f"{file} deleted from database, but it doesn't exist in VOD path.", type = 'warning')
+                                            logger.warning("User attempted to delete %s, but it doesn't exist in specified VOD path.", file)
+                                            dialog.close()
+                                            con.commit()
+                                            ui.navigate.reload()
         
                                     ui.label(f'Are you sure you want to put {file} in the trash?')
                                     with ui.row().classes('self-center'):
