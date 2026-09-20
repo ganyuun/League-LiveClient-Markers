@@ -17,7 +17,7 @@ SETTINGSPATH = './data/settings.json'
 CLIPPATH = './clips/'
 
 user = ''
-champ = ''
+champ = None
 gamemode = ''
 outputState = ''
 outputPath = ''
@@ -55,8 +55,7 @@ listener = keyboard.GlobalHotKeys({'<ctrl>+<F1>': customMarker})
 # access league live client API for username & chosen champion
 # if it fails 5 times due to a connection error (specifically the League Client not being open), try 5 times before returning username from settings (or a hardcoded one if it wasn't saved beforehand), and NA
 async def getPlayerInfo():
-    global gamemode
-    global recordingDelay
+    global gamemode, recordingDelay
     connectorErrorCounter = 0
 
     while True:
@@ -230,46 +229,50 @@ def filterEvents(eventDict, username, output, champion):
         sortedEvents = sorted(filteredEvents, key = lambda d: d['EventTime'])
 
         if len(sortedEvents) >= 3: logger.info('Events filtered and sorted! Preview of current events: %s, %s, %s\n', sortedEvents[0], sortedEvents[1], sortedEvents[2])
+        elif len(sortedEvents) == 0: logger.info('Events list empty after filtering and sorting.')
         else: logger.info('Events filtered and sorted!')
 
-        # convert 'EventTime' to min:sec, add trailing 0
-        min = ''
-        sec = ''
-        for x in sortedEvents:
-            if x['EventTime'] != 'Custom':
-                x['EventTime'] += recordingDelay # add delay to EventTime
-                min = math.floor(x['EventTime'] / 60)
-                sec = round(x['EventTime'] % 60, 3)
-                x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
+        if len(sortedEvents) != 0:
+            # convert 'EventTime' to min:sec, add trailing 0
+            min = ''
+            sec = ''
+            for x in sortedEvents:
+                if x['EventTime'] != 'Custom':
+                    x['EventTime'] += recordingDelay # add delay to EventTime
+                    min = math.floor(x['EventTime'] / 60)
+                    sec = round(x['EventTime'] % 60, 3)
+                    x.update((k, f'{min:02d}:{sec:06.3f}') for k, v in x.items() if k == 'EventTime')
 
-        # remove unneeded keys in dictionaries
-        for d in sortedEvents:
-            d.pop('EventID', None)
-            d.pop('VictimName', None)
-            d.pop('Assisters', None)
-            d.pop('KillerName', None)
+            # remove unneeded keys in dictionaries
+            for d in sortedEvents:
+                d.pop('EventID', None)
+                d.pop('VictimName', None)
+                d.pop('Assisters', None)
+                d.pop('KillerName', None)
 
-        # add output, champion, gamemode to events
-        global gamemode
-        output = output.split("/")
-        for d in sortedEvents:
-            d['Champion'] = champion
-            d['Filename'] = output[-1]
-            d['Gamemode'] = gamemode
-        
-        # change order of key value pairs
-        customOrder = []
-        custom_key_order = ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode']
-        for d in sortedEvents:
-            customSort = {k: d[k] for k in custom_key_order}
-            customOrder.append(customSort)
-        
-        if len(customOrder) >= 3: logger.info('Events have been conditioned. Preview: %s, %s, %s\n', customOrder[0], customOrder[1], customOrder[2])
-        else: logger.info('Events have been conditioned.')
+            # add output, champion, gamemode to events
+            global gamemode
+            output = output.split("/")
+            for d in sortedEvents:
+                d['Champion'] = champion
+                d['Filename'] = output[-1]
+                d['Gamemode'] = gamemode
+            
+            # change order of key value pairs
+            customOrder = []
+            customKeyOrder = ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode']
+            for d in sortedEvents:
+                customSort = {k: d[k] for k in customKeyOrder}
+                customOrder.append(customSort)
+            
+            if len(customOrder) >= 3: logger.info('Events have been conditioned. Preview: %s, %s, %s\n', customOrder[0], customOrder[1], customOrder[2])
+            else: logger.info('Events have been conditioned.')
 
-        return custom_key_order, customOrder
+            return customKeyOrder, customOrder
+        else:
+            return ['Filename', 'Champion', 'EventName', 'EventTime', 'Gamemode'], []
     except Exception as e:
-       logging.exception('')
+       logger.exception(e)
 
 # move events in .csv to SQLite database
 def migrateToSQLite():
@@ -413,52 +416,63 @@ async def writeToFile(event):
         with open(EVENTPATH, mode = 'a', encoding = 'utf8') as f:
             data.write_csv(f, include_header = False)
     else:
-        eventDf = pl.DataFrame(event)
-
-        filename = eventDf.item(0, 'Filename')
-        champion = eventDf.item(0, 'Champion')
-        kda = f"{len(eventDf.filter( pl.col('EventName') == 'ChampionKill' ))}/{len(eventDf.filter( pl.col('EventName') == 'Death' ))}/{len(eventDf.filter( pl.col('EventName') == 'Assist' ))}"
-        gamemode = eventDf.item(0, 'Gamemode')
         result = None
 
-        # jade = league classic, which isn't accessible thru Riot's API
-        # kiwi = aram mayhem, also not accessible thru Riot's API
-        if gamemode not in {'PRACTICETOOL', 'JADE', 'KIWI'}:
-            with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
-                settings = json.load(f)
-                username = settings.get('username', None)
-                tagline = settings.get('tagline', None)
-                puuid = settings.get('puuid', None)
+        if len(event) == 0:
+            global champ, gamemode, outputPath
 
-            if puuid is None:
-                if None not in {username, tagline}:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getpuuid", json = {"username": username, "tagline": tagline}, headers = {"Content-Type": "application/json"}) as response:
-                            if response.status == 200:
-                                resp = await response.json()
-                                puuid = resp.get('puuid', None)
-        
-                                if puuid is not None:
-                                    with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
-                                        settings = json.load(f)
-                                    
-                                    with open(SETTINGSPATH, mode = 'w', encoding = 'utf-8') as f:
-                                        settings.update({'puuid': puuid})
-                                        json.dump(settings, f)
-        
-                                    logger.info("Successfully saved user's PUUID!")
+            cur.execute("INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result) VALUES(?, ?, ?, ?, ?)", (outputPath.split('/')[-1], champ, "0/0/0", gamemode, result))
+            con.commit()
+
+            cur.execute("SELECT * FROM videos WHERE Filename = (?)", (outputPath.split('/')[-1], ))
+            row = cur.fetchone()
+            print("This row was just added to the videos table:", row)
+        else:
+            eventDf = pl.DataFrame(event)
+
+            filename = eventDf.item(0, 'Filename')
+            champion = eventDf.item(0, 'Champion')
+            kda = f"{len(eventDf.filter( pl.col('EventName') == 'ChampionKill' ))}/{len(eventDf.filter( pl.col('EventName') == 'Death' ))}/{len(eventDf.filter( pl.col('EventName') == 'Assist' ))}"
+            gamemode = eventDf.item(0, 'Gamemode')
+
+            # jade = league classic, which isn't accessible thru Riot's API
+            # kiwi = aram mayhem, also not accessible thru Riot's API
+            if gamemode not in {'PRACTICETOOL', 'JADE', 'KIWI'}:
+                with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
+                    settings = json.load(f)
+                    username = settings.get('username', None)
+                    tagline = settings.get('tagline', None)
+                    puuid = settings.get('puuid', None)
+
+                if puuid is None:
+                    if None not in {username, tagline}:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getpuuid", json = {"username": username, "tagline": tagline}, headers = {"Content-Type": "application/json"}) as response:
+                                if response.status == 200:
+                                    resp = await response.json()
+                                    puuid = resp.get('puuid', None)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"username": username, "tagline": tagline, "puuid": puuid}) as response:
-                    if response.status == 200: 
-                        resp = await response.json()
-                        result = resp.get('result')
-                        logger.info("Successfully received the result of the user's last game!")
-                        
+                                    if puuid is not None:
+                                        with open(SETTINGSPATH, mode = 'r', encoding = 'utf-8') as f:
+                                            settings = json.load(f)
+                                        
+                                        with open(SETTINGSPATH, mode = 'w', encoding = 'utf-8') as f:
+                                            settings.update({'puuid': puuid})
+                                            json.dump(settings, f)
             
-        cur.execute("INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result) VALUES(?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
-        cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
-        con.commit()
+                                        logger.info("Successfully saved user's PUUID!")
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", json = {"username": username, "tagline": tagline, "puuid": puuid}) as response:
+                        if response.status == 200: 
+                            resp = await response.json()
+                            result = resp.get('result')
+                            logger.info("Successfully received the result of the user's last game!")
+                            
+                
+            cur.execute("INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result) VALUES(?, ?, ?, ?, ?)", (filename, champion, kda, gamemode, result))
+            cur.executemany("INSERT INTO events VALUES(:Filename, :EventName, :EventTime)", event)
+            con.commit()
     
     logger.info('Events saved!')
 
@@ -488,6 +502,7 @@ def delEvents(vodPath, eventPath):
     logger.info("Deleted events that don't exist in VODs folder (if any!)\n-------------------\n")
 
 async def main():
+    global champ
     user, champ = await getPlayerInfo()
     events, outputPath = await isOBSrecording()
 
