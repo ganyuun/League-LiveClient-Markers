@@ -107,19 +107,13 @@ async def homepage():
                                     games = ui.list().props('bordered separator')
 
                                     with games:
-                                        with ui.row():
+                                        with ui.row().classes('w-full px-10 justify-between items-center'):
                                             ui.item_label('Game').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Icon').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Champion').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('KDA').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Gamemode').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Result').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
@@ -152,9 +146,9 @@ async def homepage():
 
                                             with games:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-12'):
                                                         ui.item_label(file)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         if champion == 'Wukong':
                                                             ui.image('/champIcons/MonkeyKing.png').classes('size-8') # special Wukong case :)
                                                         elif ' ' in champion:
@@ -163,15 +157,15 @@ async def homepage():
                                                             ui.image(f'/champIcons/{champion.replace("'", '').capitalize()}.png').classes('size-8')
                                                         else:
                                                             ui.image(f'/champIcons/{champion}.png').classes('size-8')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-12'):
                                                         ui.item_label(champion)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label(kda)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-16'):
                                                         ui.item_label(gamemode)
                                                     with ui.item_section():
-                                                        if result == 'Win': ui.item_label(result).classes('text-red-500')
-                                                        elif result == 'Loss': ui.item_label(result).classes('text-blue-400')
+                                                        if result == 'Win': ui.item_label(result).classes('font-bold text-green-500')
+                                                        elif result == 'Loss': ui.item_label(result).classes('font-bold text-red-500')
                                                         else: ui.item_label('-')
                                                     with ui.item_section().props('side'):
                                                         with ui.row():
@@ -184,15 +178,15 @@ async def homepage():
                                         else:
                                             with games:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                                    with ui.item_section():
+                                                    with ui.item_section().props('no-wrap').classes('mr-12'):
                                                         ui.item_label(file)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('No events data')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('-')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('-')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('-')
                                                     with ui.item_section():
                                                         ui.item_label('-')
@@ -246,21 +240,14 @@ async def homepage():
                                     trashGames = ui.list().props('bordered separator').classes('w-full')
 
                                     with trashGames:
-                                        with ui.row():
+                                        with ui.row().classes('w-full px-10 justify-between items-center'):
                                             ui.item_label('Game').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Icon').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Champion').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('KDA').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Gamemode').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Result').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Deletion Date').props('header').classes('text-bold')
-                                            ui.space()
                                             ui.item_label('Actions').props('header').classes('text-bold')
                                         ui.separator()
                                     
@@ -293,7 +280,7 @@ async def homepage():
 
                                             with trashGames:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-12'):
                                                         ui.item_label(file)
                                                     with ui.item_section():
                                                         if champion == 'Wukong':
@@ -306,11 +293,11 @@ async def homepage():
                                                             ui.image(f'/champIcons/{champ}.png').classes('size-8')
                                                         else:
                                                             ui.image(f'/champIcons/{champion}.png').classes('size-8')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-4'):
                                                         ui.item_label(champion)
                                                     with ui.item_section():
                                                         ui.item_label(kda)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label(gamemode)
                                                     with ui.item_section():
                                                         if result == 'Win': ui.item_label(result).classes('text-red-500')
@@ -325,13 +312,13 @@ async def homepage():
                                         else:
                                             with trashGames:
                                                 with ui.item().on_click(lambda e, file=file: handle_item_click_VODs(file)):
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label(file)
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('No events data')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('-')
-                                                    with ui.item_section():
+                                                    with ui.item_section().classes('mr-8'):
                                                         ui.item_label('-')
                                                     with ui.item_section():
                                                         ui.item_label('-')
