@@ -553,50 +553,23 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 		return nil
 	}
 
-	// appending to .csv if it already exists
-	exists, err := Exists(EVENTPATH)
+	// appending to .csv if there's no existing database (this case only occurs if MigrateSQLite fails)
+	f, err := os.OpenFile(EVENTPATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 
 	if err != nil {
-		log.Fatalln("writeToFile: Encountered an error while checking if events.csv exists!", err)
-	}
-
-	if exists {
-		f, err := os.OpenFile(EVENTPATH, os.O_APPEND, 0644)
-
-		if err != nil {
-			log.Fatalln("writeToFile: Encountered an error while trying to read events.csv:", err)
-		}
-
-		defer f.Close()
-
-		writer := csv.NewWriter(f)
-
-		for _, e := range events {
-			writer.Write([]string{filename, champ, e.Name, e.Time, mode})
-		}
-
-		writer.Flush()
-
-		return nil
-	}
-
-	// if the user doesn't have a sqlite database nor an existing events.csv file (this only occurs if something goes wrong with migrateSQLite function), create a .csv
-	f, err := os.OpenFile(EVENTPATH, os.O_CREATE|os.O_APPEND, 0644)
-
-	if err != nil {
-		log.Fatalln("writeToFile: Encountered an error while trying to create events.csv:", err)
+		log.Fatalln("writeToFile: Encountered an error while trying to read events.csv:", err)
 	}
 
 	defer f.Close()
 
 	writer := csv.NewWriter(f)
-	writer.Write([]string{"Filename", "Champion", "EventName", "EventTime", "Gamemode"})
 
 	for _, e := range events {
 		writer.Write([]string{filename, champ, e.Name, e.Time, mode})
 	}
 
 	writer.Flush()
+
 	return nil
 }
 

@@ -47,7 +47,7 @@ func MigrateSQLite() (bool, error) {
 	log.SetOutput(logWriter)
 
 	if result, err := Exists(DBPATH); result == false && err == nil {
-		log.Println("\t--- CSV -> SQLite3 Migration ---\n")
+		log.Println("\t--- CSV -> SQLite3 Migration ---")
 
 		videos, err := os.ReadDir(VODPATH)
 
@@ -177,7 +177,7 @@ func MigrateSQLite() (bool, error) {
 				videoTx.Rollback()
 				log.Println("Failed to insert videos! Transaction rolled back.", err)
 			}
-			log.Println("Finished adding videos!\n")
+			log.Println("Finished adding videos!")
 
 			eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
@@ -237,6 +237,8 @@ func MigrateSQLite() (bool, error) {
 					favTx.Rollback()
 					log.Println("Failed to insert all favorites! Transaction rolled back.", err)
 				}
+
+				log.Println("Finished adding favorites!\n")
 			}
 		} else if err != nil {
 			log.Println("Failed at FAVSPATH")
