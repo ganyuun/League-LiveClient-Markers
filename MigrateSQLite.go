@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"slices"
 
@@ -11,7 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type Event struct {
+type event struct {
 	File      string `csv:"Filename"`
 	Champ     string `csv:"Champion"`
 	EventName string `csv:"EventName"`
@@ -19,7 +21,7 @@ type Event struct {
 	Gamemode  string `csv:"Gamemode"`
 }
 
-type Favorite struct {
+type favorite struct {
 	File string `csv:"Name"`
 }
 
@@ -34,19 +36,28 @@ func Filter[T any](slice []T, predicate func(T) bool) []T {
 	return result
 }
 
-func MigrateSQLite() error {
+func MigrateSQLite() (bool, error) {
+	logFile, err := os.OpenFile(LOGPATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+
+	if err != nil {
+		panic(err)
+	}
+
+	logWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(logWriter)
+
 	if result, err := Exists(DBPATH); result == false && err == nil {
-		fmt.Println("\n--- CSV -> SQLite3 Migration ---\n")
+		log.Println("\t--- CSV -> SQLite3 Migration ---\n")
 
 		videos, err := os.ReadDir(VODPATH)
 
-		fmt.Println("There are", len(videos), "videos in the VODs directory")
+		log.Printf("There are %d video(s) in the VODs directory.", len(videos))
 
 		os.Create(DBPATH)
 
 		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
 		if err != nil {
-			return err
+			return true, err
 		}
 
 		_, err = db.Exec(`
@@ -104,47 +115,47 @@ func MigrateSQLite() error {
 		ctx := context.Background()
 
 		if err != nil {
-			fmt.Println("Failed to begin transaction:", err)
-			return err
+			log.Println("Failed to begin transaction:", err)
+			return true, err
 		}
 
 		if result, err := Exists(EVENTPATH); result == true && err == nil {
 			eventFile, err := os.Open(EVENTPATH)
 			if err != nil {
-				return err
+				return true, err
 			}
 			defer eventFile.Close()
 
-			events := []*Event{}
+			events := []*event{}
 
 			if err := gocsv.UnmarshalFile(eventFile, &events); err != nil {
-				return err
+				return true, err
 			}
 
 			videoTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
 			// populating videos table
 			for _, video := range videos {
-				fmt.Printf("Currently working on %s for video table.\n", video.Name())
+				log.Printf("Currently working on %s for video table.\n", video.Name())
 
-				filtered := Filter(events, func(event *Event) bool {
+				filtered := Filter(events, func(event *event) bool {
 					return event.File == video.Name()
 				})
 
 				if len(filtered) > 0 {
-					fmt.Printf("\tFound %d events for %s\n", len(filtered), video.Name())
+					log.Printf("\tFound %d events for %s\n", len(filtered), video.Name())
 
-					killCount := len(Filter(filtered, func(event *Event) bool {
+					killCount := len(Filter(filtered, func(event *event) bool {
 						return event.EventName == "ChampionKill"
 					}))
-					deathCount := len(Filter(filtered, func(event *Event) bool {
+					deathCount := len(Filter(filtered, func(event *event) bool {
 						return event.EventName == "Death"
 					}))
-					assistCount := len(Filter(filtered, func(event *Event) bool {
+					assistCount := len(Filter(filtered, func(event *event) bool {
 						return event.EventName == "Assist"
 					}))
 
-					fmt.Printf("\tFound the following KDA for %s: %d/%d/%d\n", video.Name(), killCount, deathCount, assistCount)
+					log.Printf("\tFound the following KDA for %s: %d/%d/%d\n", video.Name(), killCount, deathCount, assistCount)
 
 					_, err = videoTx.ExecContext(
 						ctx,
@@ -164,9 +175,9 @@ func MigrateSQLite() error {
 
 			if err = videoTx.Commit(); err != nil {
 				videoTx.Rollback()
-				fmt.Println("Failed to insert videos! Transaction rolled back.", err)
+				log.Println("Failed to insert videos! Transaction rolled back.", err)
 			}
-			fmt.Println("Finished adding videos!")
+			log.Println("Finished adding videos!\n")
 
 			eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
@@ -181,29 +192,29 @@ func MigrateSQLite() error {
 
 			if err = eventTx.Commit(); err != nil {
 				eventTx.Rollback()
-				fmt.Println("Failed to insert all events! Transaction rolled back.", err)
+				log.Println("Failed to insert all events! Transaction rolled back.", err)
 			}
 
-			fmt.Println("Finished adding events!")
+			log.Println("Finished adding events!")
 
 		} else if err != nil {
-			fmt.Println("Failed at EVENTPATH")
-			return err
+			fmt.Println("migrateSQLite: Failed at EVENTPATH")
+			return true, err
 		}
 
 		if result, err := Exists(FAVSPATH); result == true && err == nil {
 			favsFile, err := os.Open(FAVSPATH)
 
 			if err != nil {
-				return err
+				return true, err
 			}
 
 			defer favsFile.Close()
 
-			favorites := []*Favorite{}
+			favorites := []*favorite{}
 
 			if err := gocsv.UnmarshalFile(favsFile, &favorites); err != nil {
-				return err
+				return true, err
 			} else {
 				favTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
@@ -224,16 +235,16 @@ func MigrateSQLite() error {
 
 				if err = favTx.Commit(); err != nil {
 					favTx.Rollback()
-					fmt.Println("Failed to insert all favorites! Transaction rolled back.", err)
+					log.Println("Failed to insert all favorites! Transaction rolled back.", err)
 				}
 			}
 		} else if err != nil {
-			fmt.Println("Failed at FAVSPATH")
-			return err
+			log.Println("Failed at FAVSPATH")
+			return true, err
 		}
 
 		db.Close()
 	}
 
-	return nil
+	return false, nil
 }
