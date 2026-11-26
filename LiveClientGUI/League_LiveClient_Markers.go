@@ -5,12 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"math"
 	"net/http"
@@ -25,31 +23,13 @@ import (
 	"github.com/andreykaipov/goobs"
 	"github.com/andreykaipov/goobs/api/events"
 	"github.com/zalando/go-keyring"
+	"golang.design/x/hotkey"
 )
 
 const ALLDATA string = "https://127.0.0.1:2999/liveclientdata/allgamedata"
 const EVENTDATA string = "https://127.0.0.1:2999/liveclientdata/eventdata"
-const VODPATH = "./vods/"
-const EVENTPATH = "./data/events.csv"
-const DBPATH = "./data/data.db"
-const SETTINGSPATH = "./data/settings.json"
-const CLIPPATH = "./clips/"
-const FAVSPATH = "data/favoritedVODs.csv"
 
-var LOGPATH string = fmt.Sprintf("./data/logs/log %s.txt", time.Now().Format("01-02-2006"))
-
-func Exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
-}
-
-func main() {
+func StartMarkers() {
 	logFile, err := os.OpenFile(LOGPATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 
 	if err != nil {
@@ -61,34 +41,42 @@ func main() {
 
 	if migrationNeeded, err := MigrateSQLite(); err == nil {
 		if migrationNeeded == true {
-			fmt.Println("Migration successful")
+			log.Print("StartMarkers: Migration successful")
 		}
 	} else {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	port, password, err := obsWebsocketCredentials()
 
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalf("StartMarkers: Failed to get websocket credentials: %v", err)
 	}
 
 	obsClient, err := goobs.New(fmt.Sprintf("localhost:%d", port), goobs.WithPassword(password))
 	defer obsClient.Disconnect()
 
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalf("StartMarkers: Failed to connect to OBS websocket: %v", err)
 	}
 
 	status, err := obsClient.Record.GetRecordStatus()
 
-	log.Printf("Is OBS currently recording? %v", status.OutputActive)
+	if err != nil {
+		log.Fatalf("StartMarkers: Failed to get OBS websocket record status: %v", err)
+	}
 
 	if status.OutputActive {
+		log.Print("StartMarkers: OBS is currently recording!")
 		outputCh := make(chan string)
 		outputStopped := make(chan bool)
 
 		go obsListener(obsClient, outputCh, outputStopped)
+
+		hotkey := make(chan []gameEvent)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go initHotkey(obsClient, ctx, hotkey)
 
 		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 		client := &http.Client{Transport: tr}
@@ -103,14 +91,22 @@ func main() {
 			}
 
 			events := getEvents(client, outputStopped)
+
+			cancel() // cancel listening for hotkey, merge custom events with ones from the game
+			hotkeyEvents := <-hotkey
+			if len(hotkeyEvents) > 0 {
+				log.Printf("StartMarkers: Got %v events from hotkey, appending to game events...", len(hotkeyEvents))
+				events = append(events, hotkeyEvents...)
+			}
+
 			filteredEvents := filterEvents(username, events, delay)
 			err = writeToFile(outputCh, champ, mode, filteredEvents, client)
 
 			if err != nil {
-				log.Fatalf("Encountered an error in writeToFile! Error: %s", err)
+				log.Fatalf("StartMarkers: Encountered an error in writeToFile! %v", err)
 			}
 
-			log.Println("main: Wrote events to file successfully!")
+			log.Print("StartMarkers: Wrote events to file successfully!")
 		}
 	}
 }
@@ -120,7 +116,7 @@ func obsWebsocketCredentials() (port int, password string, err error) {
 	pass, errPass := keyring.Get("LiveClient", "websocketPassword")
 
 	if errP != nil || errPass != nil {
-		log.Println("WARNING: OBS credentials not found in keyring!")
+		log.Print("WARNING: OBS credentials not found in keyring!")
 
 		if result, err := Exists("./obs/config/obs-studio/plugin_config/obs-websocket"); result == true && err == nil {
 			type response struct {
@@ -184,6 +180,39 @@ func obsListener(client *goobs.Client, output chan string, outputStopped chan bo
 	})
 }
 
+func initHotkey(client *goobs.Client, ctx context.Context, hotkeyEvents chan []gameEvent) {
+	custom := []gameEvent{}
+	hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl}, hotkey.KeyF1)
+	err := hk.Register()
+
+	if err != nil {
+		log.Printf("initHotkey: Failed to register hotkey: %v", err)
+		hotkeyEvents <- custom
+	}
+
+	log.Printf("initHotkey: Successfully registered hotkey!")
+
+	defer hk.Unregister()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Print("initHotkey: Shutting down hotkey!")
+			hotkeyEvents <- custom
+		case <-hk.Keydown():
+			status, err := client.Record.GetRecordStatus()
+
+			if err != nil {
+				log.Printf("initHotkey: Failed to get current time from OBS client: %v", err)
+			} else {
+				currentTime := (status.OutputDuration / 1000) // convert outputDuration from ms -> sec
+				log.Printf("initHotkey: Added custom event for %v!", currentTime)
+				custom = append(custom, gameEvent{Name: "Custom", Time: currentTime})
+			}
+		}
+	}
+}
+
 func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, delay bool, err error) {
 	type playerInfo struct {
 		ActivePlayer struct {
@@ -209,7 +238,7 @@ func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, de
 	resp, err := client.Get(ALLDATA)
 
 	if err != nil {
-		log.Println("getPlayerInfo: Failed to get JSON data from ALLDATA endpoint! Trying again in 10 sec...")
+		log.Print("getPlayerInfo: Failed to get JSON data from ALLDATA endpoint! Trying again in 10 sec...")
 
 		for i := range 5 {
 			time.Sleep(10 * time.Second)
@@ -277,7 +306,7 @@ func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, de
 				resp.Body.Close()
 
 				if err != nil {
-					fmt.Println("getPlayerInfo: Failed to get JSON data from ALLDATA endpoint while running in for loop!")
+					fmt.Print("getPlayerInfo: Failed to get JSON data from ALLDATA endpoint while running in for loop!")
 					panic(err)
 				}
 
@@ -285,12 +314,12 @@ func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, de
 					err = json.NewDecoder(resp.Body).Decode(&info)
 
 					if err != nil {
-						fmt.Println("getPlayerInfo: Failed to decode JSON from ALLDATA endpoint!")
+						fmt.Print("getPlayerInfo: Failed to decode JSON from ALLDATA endpoint!")
 						panic(err)
 					}
 
 					if len(info.AllPlayers) > 0 {
-						fmt.Println("getPlayerInfo: Got the player's information!", info.ActivePlayer.RiotName, info.ActivePlayer.Tagline, info.AllPlayers[0].RiotName, info.GameData.Gamemode)
+						fmt.Print("getPlayerInfo: Got the player's information!", info.ActivePlayer.RiotName, info.ActivePlayer.Tagline, info.AllPlayers[0].RiotName, info.GameData.Gamemode)
 						break
 					}
 				}
@@ -298,7 +327,7 @@ func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, de
 		}
 
 		if err != nil {
-			fmt.Println("getPlayerInfo: Failed to decode JSON from ALLDATA endpoint!")
+			fmt.Print("getPlayerInfo: Failed to decode JSON from ALLDATA endpoint!")
 			panic(err)
 		}
 	}
@@ -367,7 +396,7 @@ func getPlayerInfo(client *http.Client) (riotName, champion, gamemode string, de
 
 // events structure from game API
 // EventNames to pay attention to: GameStart, MinionsSpawning, FirstBlood, ChampionKill, Multikill, Ace, GameEnd
-type gameEvents struct {
+type gameEvent struct {
 	ID        int      `json:"EventID"`    // present for all events
 	Name      string   `json:"EventName"`  // present for all events
 	Time      float64  `json:"EventTime"`  // present for all events
@@ -378,13 +407,13 @@ type gameEvents struct {
 	Recipient string   `json:"Recipient"`  // only present for FirstBlood
 }
 
-type leagueEvents []gameEvents
+type leagueEvents []gameEvent
 
 func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
-	log.Println("getEvents: Started saving events!")
+	log.Print("getEvents: Started saving events!")
 
 	var wrapper struct {
-		Events []gameEvents `json:"Events"`
+		Events []gameEvent `json:"Events"`
 	}
 
 	var events leagueEvents
@@ -393,7 +422,7 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 		resp, err := client.Get(EVENTDATA)
 
 		if err != nil {
-			log.Println("getEvents: Failed to get JSON from EVENTDATA endpoint! Is the game closed?", err) // error might occur when game closes
+			log.Print("getEvents: Failed to get JSON from EVENTDATA endpoint! Is the game closed?", err) // error might occur when game closes
 
 			if len(events) > 0 {
 				return events
@@ -406,7 +435,7 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 			err = json.NewDecoder(resp.Body).Decode(&wrapper)
 
 			if err != nil {
-				log.Println("getEvents: Failed to decode JSON from EVENTDATA endpoint! Is the game closed?", err)
+				log.Print("getEvents: Failed to decode JSON from EVENTDATA endpoint! Is the game closed?", err)
 
 				return events
 			}
@@ -416,7 +445,7 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 			select {
 			case val, ok := <-outputStopped:
 				if val && ok {
-					log.Println("getEvents: OBS recording stopped! Ending getEvents loop.")
+					log.Print("getEvents: OBS recording stopped! Ending getEvents loop.")
 					return events
 				}
 			default:
@@ -463,6 +492,8 @@ func filterEvents(username string, events leagueEvents, delay float64) []conditi
 			}
 		case "Ace":
 			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Ace", Time: timeFormat})
+		case "Custom":
+			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Custom", Time: timeFormat})
 		}
 	}
 
@@ -472,104 +503,77 @@ func filterEvents(username string, events leagueEvents, delay float64) []conditi
 func writeToFile(filenameCh chan string, champ string, mode string, events []conditionedEvent, client *http.Client) error {
 	filename := <-filenameCh
 
-	result, err := Exists(DBPATH)
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
 
 	if err != nil {
-		log.Println("writeToFile: Encountered error while checking if SQLite3 database exists; defaulting to .csv output.", err)
+		fmt.Print("writeToFile: Encountered error opening SQLite3 database!", err)
+		return err
 	}
 
-	// writing to database if it exists
-	if result {
-		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
+	// remains blank if getMatchResult() fails, or becomes "WIN" / "LOSS"
+	var result string = ""
+
+	if !slices.Contains([]string{"PRACTICETOOL", "JADE", "KIWI"}, mode) {
+		time.Sleep(5 * time.Second)
+		result, err = getGameResult(client)
 
 		if err != nil {
-			fmt.Println("writeToFile: Encountered error opening SQLite3 database!", err)
-			return err
+			log.Print("writeToFile: Calling getGameResult() failed:", err)
+		}
+	}
+
+	if len(events) > 0 {
+		killCount := len(Filter(events, func(e conditionedEvent) bool {
+			return e.Name == "ChampionKill"
+		}))
+
+		deathCount := len(Filter(events, func(e conditionedEvent) bool {
+			return e.Name == "Death"
+		}))
+
+		assistCount := len(Filter(events, func(e conditionedEvent) bool {
+			return e.Name == "Assist"
+		}))
+
+		db.Exec(`
+			INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result)
+			VALUES (?, ?, ?, ?, ?)`,
+			filename, champ, fmt.Sprintf("%d/%d/%d", killCount, deathCount, assistCount), mode, result)
+
+		ctx := context.Background()
+		eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+
+		if err != nil {
+			log.Fatalln("writeToFile: Failed to create SQLite3 transaction to write events!", err)
 		}
 
-		// remains blank if getMatchResult() fails, or becomes "WIN" / "LOSS"
-		var result string = ""
-
-		if !slices.Contains([]string{"PRACTICETOOL", "JADE", "KIWI"}, mode) {
-			result, err = getGameResult(client)
-
-			if err != nil {
-				log.Println("writeToFile: Calling getGameResult() failed:", err)
-			}
-		}
-
-		if len(events) > 0 {
-			killCount := len(Filter(events, func(e conditionedEvent) bool {
-				return e.Name == "ChampionKill"
-			}))
-
-			deathCount := len(Filter(events, func(e conditionedEvent) bool {
-				return e.Name == "Death"
-			}))
-
-			assistCount := len(Filter(events, func(e conditionedEvent) bool {
-				return e.Name == "Assist"
-			}))
-
-			db.Exec(`
-				INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result)
-				VALUES (?, ?, ?, ?, ?)`,
-				filename, champ, fmt.Sprintf("%d/%d/%d", killCount, deathCount, assistCount), mode, result)
-
-			ctx := context.Background()
-			eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-
-			if err != nil {
-				log.Fatalln("writeToFile: Failed to create SQLite3 transaction to write events!", err)
-			}
-
-			for _, e := range events {
-				_, err = eventTx.ExecContext(
-					ctx,
-					`INSERT INTO events (Filename, EventName, EventTime) 
-					VALUES (?, ?, ?)`,
-					filename, e.Name, e.Time)
-
-				if err != nil {
-					eventTx.Rollback()
-					log.Fatalln("writeToFile: Encountered an error while writing events transaction.", err)
-				}
-			}
-
-			err = eventTx.Commit()
+		for _, e := range events {
+			_, err = eventTx.ExecContext(
+				ctx,
+				`INSERT INTO events (Filename, EventName, EventTime) 
+				VALUES (?, ?, ?)`,
+				filename, e.Name, e.Time)
 
 			if err != nil {
 				eventTx.Rollback()
-				log.Fatalln("writeToFile: Encountered an error while committing events transaction.", err)
+				log.Fatalln("writeToFile: Encountered an error while writing events transaction.", err)
 			}
-		} else {
-			db.Exec(`
-				INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result)
-				VALUES (?, ?, ?, ?, ?)`,
-				filename, champ, "0/0/0", mode, result)
 		}
 
-		db.Close()
-		return nil
+		err = eventTx.Commit()
+
+		if err != nil {
+			eventTx.Rollback()
+			log.Fatalln("writeToFile: Encountered an error while committing events transaction.", err)
+		}
+	} else {
+		db.Exec(`
+			INSERT INTO videos (Filename, Champion, KDA, Gamemode, Result)
+			VALUES (?, ?, ?, ?, ?)`,
+			filename, champ, "0/0/0", mode, result)
 	}
 
-	// appending to .csv if there's no existing database (this case only occurs if MigrateSQLite fails)
-	f, err := os.OpenFile(EVENTPATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-
-	if err != nil {
-		log.Fatalln("writeToFile: Encountered an error while trying to read events.csv:", err)
-	}
-
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-
-	for _, e := range events {
-		writer.Write([]string{filename, champ, e.Name, e.Time, mode})
-	}
-
-	writer.Flush()
-
+	db.Close()
 	return nil
 }
 
@@ -582,33 +586,33 @@ func getGameResult(client *http.Client) (result string, err error) {
 		f, err := os.ReadFile(SETTINGSPATH)
 
 		if err != nil {
-			log.Println("writeToFile: Failed to read settings file.", err)
+			log.Print("writeToFile: Failed to read settings file.", err)
 			return "", err
 		}
 
 		err = json.Unmarshal(f, &settings)
 
 		if err != nil {
-			log.Println("writeToFile: Failed to unmarshal settings JSON file.", err)
+			log.Print("writeToFile: Failed to unmarshal settings JSON file.", err)
 			return "", err
 		}
 
 		var apiResponse map[string]any
 
 		// request user PUUID from Riot API if it's not saved in settings yet, then update the file
-		if settings["puuid"] == "" {
+		if _, ok := settings["puuid"]; !ok {
 			body := map[string]any{"username": settings["username"], "tagline": settings["tagline"]}
 			bodyJSON, err := json.Marshal(body)
 
 			if err != nil {
-				log.Println("writeToFile: Failed to marshal body for requesting PUUID!")
+				log.Print("writeToFile: Failed to marshal body for requesting PUUID!")
 				return "", err
 			}
 
 			resp, err := client.Post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getpuuid", "application/json", bytes.NewReader(bodyJSON))
 
 			if err != nil {
-				log.Println("writeToFile: Failed to POST request for user PUUID!")
+				log.Print("writeToFile: Failed to POST request for user PUUID!")
 				return "", err
 			}
 
@@ -618,7 +622,7 @@ func getGameResult(client *http.Client) (result string, err error) {
 				err = json.NewDecoder(resp.Body).Decode(&apiResponse)
 
 				if err != nil {
-					log.Println("writeToFile: Failed to decode API response for User's PUUID!")
+					log.Print("writeToFile: Failed to decode API response for User's PUUID!")
 					return "", err
 				}
 
@@ -634,7 +638,7 @@ func getGameResult(client *http.Client) (result string, err error) {
 			err = os.WriteFile(SETTINGSPATH, settingsJSON, 0666)
 
 			if err != nil {
-				log.Println("getGameResult: Failed to write PUUID to settings file.")
+				log.Print("getGameResult: Failed to write PUUID to settings file.")
 				return "", err
 			}
 		}
@@ -644,14 +648,14 @@ func getGameResult(client *http.Client) (result string, err error) {
 		bodyJSON, err := json.Marshal(body)
 
 		if err != nil {
-			log.Println("writeToFile: Failed to marshal body for requesting game result!")
+			log.Print("writeToFile: Failed to marshal body for requesting game result!")
 			return "", err
 		}
 
 		resp, err := client.Post("https://cxnf2smlr4hax5zunln6dte5iq0sobsi.lambda-url.us-east-2.on.aws/getmatchresult", "application/json", bytes.NewReader(bodyJSON))
 
 		if err != nil {
-			log.Println("writeToFile: Failed to POST request for game result!")
+			log.Print("writeToFile: Failed to POST request for game result!")
 			return "", err
 		}
 
@@ -661,7 +665,7 @@ func getGameResult(client *http.Client) (result string, err error) {
 			err = json.NewDecoder(resp.Body).Decode(&apiResponse)
 
 			if err != nil {
-				log.Println("writeToFile: Failed to decode API response for match result!")
+				log.Print("writeToFile: Failed to decode API response for match result!")
 				return "", err
 			}
 		}

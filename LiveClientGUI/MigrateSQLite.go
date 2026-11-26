@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
@@ -19,10 +20,6 @@ type event struct {
 	EventName string `csv:"EventName"`
 	EventTime string `csv:"EventTime"`
 	Gamemode  string `csv:"Gamemode"`
-}
-
-type favorite struct {
-	File string `csv:"Name"`
 }
 
 func Filter[T any](slice []T, predicate func(T) bool) []T {
@@ -47,7 +44,7 @@ func MigrateSQLite() (bool, error) {
 	log.SetOutput(logWriter)
 
 	if result, err := Exists(DBPATH); result == false && err == nil {
-		log.Println("\t--- CSV -> SQLite3 Migration ---")
+		log.Print("\t--- CSV -> SQLite3 Migration ---")
 
 		videos, err := os.ReadDir(VODPATH)
 
@@ -115,7 +112,7 @@ func MigrateSQLite() (bool, error) {
 		ctx := context.Background()
 
 		if err != nil {
-			log.Println("Failed to begin transaction:", err)
+			log.Print("Failed to begin transaction:", err)
 			return true, err
 		}
 
@@ -175,9 +172,9 @@ func MigrateSQLite() (bool, error) {
 
 			if err = videoTx.Commit(); err != nil {
 				videoTx.Rollback()
-				log.Println("Failed to insert videos! Transaction rolled back.", err)
+				log.Print("Failed to insert videos! Transaction rolled back. ", err)
 			}
-			log.Println("Finished adding videos!")
+			log.Print("Finished adding videos!")
 
 			eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
@@ -192,56 +189,58 @@ func MigrateSQLite() (bool, error) {
 
 			if err = eventTx.Commit(); err != nil {
 				eventTx.Rollback()
-				log.Println("Failed to insert all events! Transaction rolled back.", err)
+				log.Print("Failed to insert all events! Transaction rolled back. ", err)
 			}
 
-			log.Println("Finished adding events!")
+			log.Print("Finished adding events!")
 
 		} else if err != nil {
-			fmt.Println("migrateSQLite: Failed at EVENTPATH")
+			fmt.Print("migrateSQLite: Failed at EVENTPATH ", err)
 			return true, err
 		}
 
+		// populating favorites
 		if result, err := Exists(FAVSPATH); result == true && err == nil {
-			favsFile, err := os.Open(FAVSPATH)
+			f, err := os.OpenFile(FAVSPATH, os.O_RDONLY, 0644)
 
 			if err != nil {
 				return true, err
 			}
 
-			defer favsFile.Close()
+			defer f.Close()
 
-			favorites := []*favorite{}
+			r := csv.NewReader(f)
+			favorites, err := r.ReadAll()
 
-			if err := gocsv.UnmarshalFile(favsFile, &favorites); err != nil {
-				return true, err
-			} else {
-				favTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-
-				videoStrings := make([]string, len(videos))
-
-				for i := range videos {
-					videoStrings[i] = videos[i].Name()
-				}
-
-				for i := range favorites {
-					if slices.Contains(videoStrings, favorites[i].File) {
-						_, err = favTx.ExecContext(
-							ctx,
-							`INSERT INTO favorites (Filename)
-							VALUES (?)`, favorites[i].File)
-					}
-				}
-
-				if err = favTx.Commit(); err != nil {
-					favTx.Rollback()
-					log.Println("Failed to insert all favorites! Transaction rolled back.", err)
-				}
-
-				log.Println("Finished adding favorites!\n")
+			if err != nil {
+				log.Fatal("MigrateSQLite: Failed to read all lines in favoritedVODs.csv: ", err)
 			}
+
+			favTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+
+			videoStrings := make([]string, len(videos))
+
+			for i := range videos {
+				videoStrings[i] = videos[i].Name()
+			}
+
+			for _, fav := range favorites[1:] {
+				if slices.Contains(videoStrings, fav[0]) {
+					_, err = favTx.ExecContext(
+						ctx,
+						`INSERT INTO favorites (Filename)
+						VALUES (?)`, fav[0])
+				}
+			}
+
+			if err = favTx.Commit(); err != nil {
+				favTx.Rollback()
+				log.Print("Failed to insert all favorites! Transaction rolled back. ", err)
+			}
+
+			log.Print("Finished adding favorites!\n")
 		} else if err != nil {
-			log.Println("Failed at FAVSPATH")
+			log.Print("Failed at FAVSPATH ", err)
 			return true, err
 		}
 
