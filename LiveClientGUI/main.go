@@ -50,23 +50,17 @@ var CLIPPATH string = fmt.Sprintf("%s/clips/", ROOT)
 var THUMBPATH string = fmt.Sprintf("%s/data/thumbnails/", ROOT)
 var FAVSPATH string = fmt.Sprintf("%s/data/favoritedVODs.csv", ROOT)
 var LOGPATH string = fmt.Sprintf("%s/data/logs/log %s.txt", ROOT, time.Now().Format("01-02-2006"))
+var FFPROBEPATH string = fmt.Sprintf("%s/ffprobe.exe", ROOT)
+var FFMPEGPATH string = fmt.Sprintf("%s/ffmpeg.exe", ROOT)
 
 func assetMiddleware() application.Middleware {
+	ddragonServe := http.StripPrefix("/ddragon/", http.FileServer(http.Dir(filepath.Join(ROOT, "ddragon"))))
+	thumbServe := http.StripPrefix("/thumbs/", http.FileServer(http.Dir(filepath.Join(ROOT, "data", "thumbnails"))))
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			vodServe := http.StripPrefix("/vods/", http.FileServer(http.Dir(filepath.Join(ROOT, "vods"))))
-			clipServe := http.StripPrefix("/clips/", http.FileServer(http.Dir(filepath.Join(ROOT, "clips"))))
-			ddragonServe := http.StripPrefix("/ddragon/", http.FileServer(http.Dir(filepath.Join(ROOT, "ddragon"))))
-			thumbServe := http.StripPrefix("/thumbs/", http.FileServer(http.Dir(filepath.Join(ROOT, "data", "thumbnails"))))
-
 			if strings.HasPrefix(r.URL.Path, "/wails") {
 				next.ServeHTTP(w, r)
-				return
-			} else if strings.HasPrefix(r.URL.Path, "/vods") {
-				vodServe.ServeHTTP(w, r)
-				return
-			} else if strings.HasPrefix(r.URL.Path, "/clips") {
-				clipServe.ServeHTTP(w, r)
 				return
 			} else if strings.HasPrefix(r.URL.Path, "/ddragon") {
 				ddragonServe.ServeHTTP(w, r)
@@ -82,11 +76,17 @@ func assetMiddleware() application.Middleware {
 }
 
 func main() {
+	mediaService, err := NewMediaService()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	app := application.New(application.Options{
 		Name:        "LiveClient",
 		Description: "Getting events from Riot's Live Client API!",
 		Services: []application.Service{
-			application.NewService(NewVodListService()),
+			application.NewService(mediaService),
+			application.NewService(NewVodService()),
 			application.NewService(NewClipService()),
 			application.NewService(NewFileService()),
 		},
@@ -109,7 +109,19 @@ func main() {
 			fmt.Println("main: Migration from .csv to SQLite3 successful")
 		}
 	} else {
-		panic(err)
+		log.Fatal(err)
+	}
+
+	if migrationNeeded, err := MigrateSQLite(); err == nil {
+		if migrationNeeded == true {
+			log.Print("Main: SQLite migration successful")
+		}
+	} else {
+		log.Fatal(err)
+	}
+
+	if err := NewVodService().RemuxVODs(); err != nil {
+		log.Fatal(err)
 	}
 
 	if len(os.Args) > 1 {

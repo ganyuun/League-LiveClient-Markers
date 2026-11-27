@@ -23,9 +23,6 @@ type clipInfo struct {
 	Thumbnail string
 }
 
-var FFPROBEPATH string = fmt.Sprintf("%s/ffprobe.exe", ROOT)
-var FFMPEGPATH string = fmt.Sprintf("%s/ffmpeg.exe", ROOT)
-
 func (g *ClipService) ListClips() []clipInfo {
 	clipDir, err := os.ReadDir(CLIPPATH)
 	clips := []string{}

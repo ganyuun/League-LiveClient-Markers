@@ -1,66 +1,41 @@
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Typography from '@mui/material/Typography'
-import Paper from '@mui/material/Paper'
-import Tabs from '@mui/material/Tabs'
-import Tab from '@mui/material/Tab'
-import Box from '@mui/material/Box'
-import VideocamIcon from '@mui/icons-material/Videocam';
-import MovieIcon from '@mui/icons-material/Movie';
-import SettingsIcon from '@mui/icons-material/Settings';
-import VodTable from './vods'
-import ClipGrid from './clips'
-import React from 'react'
+import VodTable from './pages/vods/vods'
+import ClipGrid from './pages/clips/clips'
+import { WatchClip } from './pages/clips/watchClip'
+import { WatchVod } from './pages/vods/watchVod'
+import { Layout } from './components/layout'
+import { Routes, Route } from "react-router";
 
-const darkTheme = createTheme({ palette: {mode: 'dark'}, });
+const darkTheme = createTheme({ palette: { mode: 'dark' }, });
 
 export function App() {
   return (
-    <>
-      <ThemeProvider theme={darkTheme}>
-        <CssBaseline>
-          <TabLayout />
-        </CssBaseline>
-      </ThemeProvider>
-    </>
-  )
-}
+    <ThemeProvider theme={darkTheme}>
+      <CssBaseline />
+      <Routes>
+        <Route path="/" element={<Layout />} >
+          <Route index element={<VodTable />} />
+          <Route path="watch" element={ <WatchVod /> } />
 
-function TabLayout() {
-  const [tab, setTab] = React.useState(0);
+          <Route path="clip">
+            <Route index element={<ClipGrid />} />
+            <Route path="watch" element={ <WatchClip />} />
+          </Route>
 
-  const handleChange = (event: React.SyntheticEvent, newValue: number) => { setTab(newValue); };
-
-  return (
-    <>
-    <Paper sx={{ flexGrow: 1, display: 'flex', minHeight: '100vh' }}>
-      <Tabs
-        orientation = "vertical"
-        value = {tab}
-        onChange = {handleChange}
-        sx = {{ borderRight: 1, borderColor: "divider", flexShrink: 0 }}
-        centered
-      >
-        <Tab icon={<VideocamIcon />} label = "VODs" />
-        <Tab icon={<MovieIcon />} label = "Clips" />
-        <Tab icon={<SettingsIcon />} label = "Settings" />
-      </Tabs>
-
-      <Box sx={{flexGrow: 1, mx: 2, my: 2, overflow: 'auto'}}>
-        {tab === 0 && <VodTable />}
-        {tab === 1 && <ClipGrid />}
-        {tab === 2 && <SettingsPage />}
-      </Box>
-    </Paper>
-    </>
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </ThemeProvider>
   )
 }
 
 function SettingsPage() {
   return (
     <>
-      <Typography variant="h4" sx={{fontWeight: 'bold', marginBottom: 2}}>Settings</Typography>
-      <div>hello</div>
+      <Typography variant="h4" sx={{ fontWeight: 'bold', marginBottom: 2 }}>Settings</Typography>
+      <div>HI :D</div>
     </>
   )
 }

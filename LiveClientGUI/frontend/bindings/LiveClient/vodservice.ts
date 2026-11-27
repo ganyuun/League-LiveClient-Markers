@@ -6,13 +6,17 @@
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 export function GetFavorites(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2962885789);
+    return $Call.ByID(1883807413);
 }
 
 export function ListVODs(): $CancellablePromise<({ [_ in string]?: any } | null)[] | null> {
-    return $Call.ByID(874396194);
+    return $Call.ByID(1999125834);
+}
+
+export function RemuxVODs(): $CancellablePromise<void> {
+    return $Call.ByID(1170349171);
 }
 
 export function UpdateFavorites(filename: string): $CancellablePromise<string[] | null> {
-    return $Call.ByID(3674254826, filename);
+    return $Call.ByID(2799047058, filename);
 }

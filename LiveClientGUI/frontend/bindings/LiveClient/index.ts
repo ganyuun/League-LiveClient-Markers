@@ -3,9 +3,11 @@
 
 import * as ClipService from "./clipservice.js";
 import * as FileService from "./fileservice.js";
-import * as VodListService from "./vodlistservice.js";
+import * as MediaService from "./mediaservice.js";
+import * as VodService from "./vodservice.js";
 export {
     ClipService,
     FileService,
-    VodListService
+    MediaService,
+    VodService
 };

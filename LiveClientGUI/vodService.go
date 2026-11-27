@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -13,13 +16,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type VodListService struct{}
+type VodService struct{}
 
-func NewVodListService() *VodListService {
-	return &VodListService{}
+func NewVodService() *VodService {
+	return &VodService{}
 }
 
-func (g *VodListService) ListVODs() []map[string]any {
+func (g *VodService) ListVODs() []map[string]any {
 	allVideos := []map[string]any{}
 
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
@@ -68,7 +71,7 @@ func (g *VodListService) ListVODs() []map[string]any {
 	return allVideos
 }
 
-func (g *VodListService) GetFavorites() []string {
+func (g *VodService) GetFavorites() []string {
 	favorites := []string{}
 
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
@@ -102,7 +105,7 @@ func (g *VodListService) GetFavorites() []string {
 	return favorites
 }
 
-func (g *VodListService) UpdateFavorites(filename string) []string {
+func (g *VodService) UpdateFavorites(filename string) []string {
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
 
 	if err != nil {
@@ -118,4 +121,69 @@ func (g *VodListService) UpdateFavorites(filename string) []string {
 	}
 
 	return g.GetFavorites()
+}
+
+func (g *VodService) RemuxVODs() error {
+	vodInfo, err := os.ReadDir(VODPATH)
+
+	if err != nil {
+		log.Printf("RemuxVODs: Failed to read %s: %v", VODPATH, err)
+		return err
+	}
+
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
+
+	if err != nil {
+		log.Printf("RemuxVODs: Failed to open %s: %v", DBPATH, err)
+		return err
+	}
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	defer tx.Rollback()
+
+	if err != nil {
+		log.Printf("RemuxVODs: Failed to begin transaction: %v", err)
+		return err
+	}
+
+	// remux every non .mp4 so that it can be streamed in GUI
+	for _, vod := range vodInfo {
+		if !strings.Contains(vod.Name(), ".mp4") {
+			oldPath := fmt.Sprintf("%s%s", VODPATH, vod.Name()) // ex. "./vods/something.mkv"
+			baseName, _, _ := strings.Cut(vod.Name(), ".")      // "something"
+			newName := fmt.Sprintf("%s.mp4", baseName)          // "something.mp4"
+			newPath := fmt.Sprintf("%s%s", VODPATH, newName)    // ex. "./vods/something.mp4"
+
+			cmd := exec.Command(FFMPEGPATH, "-i", oldPath, "-movflags", "+faststart", "-c", "copy", newPath)
+			err := cmd.Run()
+
+			if err != nil {
+				log.Fatalf("RemuxVODs: Failed to remux %s: %v", vod.Name(), err)
+				return err
+			}
+
+			_, err = tx.ExecContext(ctx, "UPDATE videos SET Filename = (?) WHERE Filename = (?)", newName, vod.Name())
+			if err != nil {
+				log.Printf("RemuxVODs: Failed to update videos table: %v", err)
+				return err
+			}
+
+			// err = os.Remove(oldPath)
+
+			// if err != nil {
+			// 	log.Printf("RemuxVODs: Failed to delete %s: %v", oldPath, err)
+			// 	return err
+			// }
+
+			log.Printf("RemuxVODs: Successfully remuxed: %s -> %s.", oldPath, newPath)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("RemuxVODs: Failed to commit transaction: %s", err)
+		return err
+	}
+
+	return nil
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -38,14 +37,6 @@ func StartMarkers() {
 
 	logWriter := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(logWriter)
-
-	if migrationNeeded, err := MigrateSQLite(); err == nil {
-		if migrationNeeded == true {
-			log.Print("StartMarkers: Migration successful")
-		}
-	} else {
-		log.Fatal(err)
-	}
 
 	port, password, err := obsWebsocketCredentials()
 
@@ -422,7 +413,7 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 		resp, err := client.Get(EVENTDATA)
 
 		if err != nil {
-			log.Print("getEvents: Failed to get JSON from EVENTDATA endpoint! Is the game closed?", err) // error might occur when game closes
+			log.Printf("getEvents: Failed to get JSON from EVENTDATA endpoint! Is the game closed? %v", err) // error might occur when game closes
 
 			if len(events) > 0 {
 				return events
@@ -435,7 +426,7 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 			err = json.NewDecoder(resp.Body).Decode(&wrapper)
 
 			if err != nil {
-				log.Print("getEvents: Failed to decode JSON from EVENTDATA endpoint! Is the game closed?", err)
+				log.Printf("getEvents: Failed to decode JSON from EVENTDATA endpoint! %v", err)
 
 				return events
 			}
@@ -460,40 +451,36 @@ func getEvents(client *http.Client, outputStopped chan bool) leagueEvents {
 
 type conditionedEvent struct {
 	Name string
-	Time string
+	Time float64
 }
 
 func filterEvents(username string, events leagueEvents, delay float64) []conditionedEvent {
 	var filteredEvents []conditionedEvent
 
 	for _, e := range events {
-		// convert seconds float -> MM:SS string
 		timeDelay := e.Time + delay
-		min := math.Floor(timeDelay / 60)
-		sec := math.Mod(timeDelay, 60)
-		timeFormat := fmt.Sprintf("%02.0f:%06.3f", min, sec)
 
 		switch e.Name {
 		case "FirstBlood":
 			if e.Recipient == username {
-				filteredEvents = append(filteredEvents, conditionedEvent{Name: "FirstBlood", Time: timeFormat})
+				filteredEvents = append(filteredEvents, conditionedEvent{Name: "FirstBlood", Time: timeDelay})
 			}
 		case "ChampionKill":
 			if e.Killer == username {
-				filteredEvents = append(filteredEvents, conditionedEvent{Name: "ChampionKill", Time: timeFormat})
+				filteredEvents = append(filteredEvents, conditionedEvent{Name: "ChampionKill", Time: timeDelay})
 			} else if e.Victim == username {
-				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Death", Time: timeFormat})
+				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Death", Time: timeDelay})
 			} else if slices.Contains(e.Assisters, username) {
-				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Assist", Time: timeFormat})
+				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Assist", Time: timeDelay})
 			}
 		case "Multikill":
 			if e.Killer == username {
-				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Multikill", Time: timeFormat})
+				filteredEvents = append(filteredEvents, conditionedEvent{Name: "Multikill", Time: timeDelay})
 			}
 		case "Ace":
-			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Ace", Time: timeFormat})
+			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Ace", Time: timeDelay})
 		case "Custom":
-			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Custom", Time: timeFormat})
+			filteredEvents = append(filteredEvents, conditionedEvent{Name: "Custom", Time: timeDelay})
 		}
 	}
 
@@ -506,7 +493,7 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
 
 	if err != nil {
-		fmt.Print("writeToFile: Encountered error opening SQLite3 database!", err)
+		fmt.Printf("writeToFile: Encountered error opening SQLite3 database! %v", err)
 		return err
 	}
 
@@ -518,7 +505,7 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 		result, err = getGameResult(client)
 
 		if err != nil {
-			log.Print("writeToFile: Calling getGameResult() failed:", err)
+			log.Printf("writeToFile: Calling getGameResult() failed: %v", err)
 		}
 	}
 
@@ -544,7 +531,8 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 		eventTx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
 		if err != nil {
-			log.Fatalln("writeToFile: Failed to create SQLite3 transaction to write events!", err)
+			log.Printf("writeToFile: Failed to create SQLite3 transaction to write events: %v", err)
+			return err
 		}
 
 		for _, e := range events {
@@ -556,7 +544,8 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 
 			if err != nil {
 				eventTx.Rollback()
-				log.Fatalln("writeToFile: Encountered an error while writing events transaction.", err)
+				log.Printf("writeToFile: Encountered an error while writing events transaction: %v", err)
+				return err
 			}
 		}
 
@@ -564,7 +553,8 @@ func writeToFile(filenameCh chan string, champ string, mode string, events []con
 
 		if err != nil {
 			eventTx.Rollback()
-			log.Fatalln("writeToFile: Encountered an error while committing events transaction.", err)
+			log.Printf("writeToFile: Encountered an error while committing events transaction: %v", err)
+			return err
 		}
 	} else {
 		db.Exec(`

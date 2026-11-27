@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -65,4 +67,9 @@ func (g *FileService) DeleteFile(folder string, filename string) (deleted bool) 
 
 	log.Printf("DeleteFile: Deleted %v successfully.", path)
 	return true
+}
+
+func (g *FileService) RevealFile(folder string, filename string) {
+	relPath := fmt.Sprintf("%s/%s/%s", ROOT, folder, filename)
+	application.Get().Env.OpenFileManager(relPath, true)
 }

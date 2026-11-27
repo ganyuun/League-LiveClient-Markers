@@ -8,3 +8,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 export function DeleteFile(folder: string, filename: string): $CancellablePromise<boolean> {
     return $Call.ByID(3158615214, folder, filename);
 }
+
+export function RevealFile(folder: string, filename: string): $CancellablePromise<void> {
+    return $Call.ByID(646158984, folder, filename);
+}

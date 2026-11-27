@@ -34,6 +34,9 @@ html {
 html, body {
     margin: 0;
     color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 body {
     overflow-x: hidden;
