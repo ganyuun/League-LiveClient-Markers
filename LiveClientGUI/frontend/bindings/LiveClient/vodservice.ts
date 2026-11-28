@@ -9,6 +9,10 @@ export function GetFavorites(): $CancellablePromise<string[] | null> {
     return $Call.ByID(1883807413);
 }
 
+export function ListEvents(filename: string): $CancellablePromise<({ [_ in string]?: any } | null)[] | null> {
+    return $Call.ByID(2151376717, filename);
+}
+
 export function ListVODs(): $CancellablePromise<({ [_ in string]?: any } | null)[] | null> {
     return $Call.ByID(1999125834);
 }

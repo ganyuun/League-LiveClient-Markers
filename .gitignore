@@ -32,3 +32,5 @@ build/ios/xcode/gen/
 build/android/overlay.json
 build/android/gen/
 node_modules/
+!LiveClientGUI/frontend/src/pages/clips
+!LiveClientGUI/frontend/src/pages/vods

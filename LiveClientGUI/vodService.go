@@ -169,12 +169,12 @@ func (g *VodService) RemuxVODs() error {
 				return err
 			}
 
-			// err = os.Remove(oldPath)
+			err = os.Remove(oldPath)
 
-			// if err != nil {
-			// 	log.Printf("RemuxVODs: Failed to delete %s: %v", oldPath, err)
-			// 	return err
-			// }
+			if err != nil {
+				log.Printf("RemuxVODs: Failed to delete %s: %v", oldPath, err)
+				return err
+			}
 
 			log.Printf("RemuxVODs: Successfully remuxed: %s -> %s.", oldPath, newPath)
 		}
@@ -186,4 +186,41 @@ func (g *VodService) RemuxVODs() error {
 	}
 
 	return nil
+}
+
+func (g *VodService) ListEvents(filename string) []map[string]any {
+	events := []map[string]any{}
+
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", DBPATH))
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rows, err := db.Query("SELECT ROW_NUMBER() OVER (ORDER BY EventTime) AS Row, EventName, EventTime FROM 'events' WHERE Filename = (?) ORDER BY Row", filename)
+
+	if err != nil {
+		log.Printf("GetEvents: Failed to get events for %s: %v", filename, err)
+		return events
+	}
+
+	for rows.Next() {
+		var row int
+		var name string
+		var time float64
+
+		err := rows.Scan(&row, &name, &time)
+
+		if err != nil {
+			log.Printf("GetEvents: Error in rows.Next() loop: %v", err)
+		}
+
+		events = append(events, map[string]any{"Row": row, "EventName": name, "EventTime": time})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Print("GetEvents: Encountered error while querying for VODs! ", err)
+	}
+
+	return events
 }

@@ -42,6 +42,4 @@ body {
     overflow-x: hidden;
 }
 
-/* Framework mount nodes (#app / #root) shouldn't affect layout, so the
-   body flex centering applies directly to .container. */
 #app, #root { display: contents; }

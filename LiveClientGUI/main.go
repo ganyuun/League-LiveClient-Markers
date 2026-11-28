@@ -98,8 +98,10 @@ func main() {
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "LiveClient",
-		Width:            1000,
-		Height:           618,
+		Width:            1100,
+		Height:           700,
+		MinWidth:         900,
+		MinHeight:        500,
 		BackgroundColour: application.NewRGB(6, 7, 15),
 		URL:              "/",
 	})

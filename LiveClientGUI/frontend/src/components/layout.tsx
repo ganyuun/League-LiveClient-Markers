@@ -1,4 +1,4 @@
-import { Box, Drawer, Paper, Tab, Tabs } from "@mui/material"
+import { Box, Paper, Tab, Tabs } from "@mui/material"
 import { useNavigate, useLocation, Outlet, Link } from "react-router-dom"
 import VideocamIcon from '@mui/icons-material/Videocam';
 import MovieIcon from '@mui/icons-material/Movie';
@@ -7,7 +7,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 export const Layout = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const currentTab = location.pathname.split('/')[1] || 'vod';
+    const currentTab = location.pathname.split('/')[1] || '/';
 
     return (
         <Paper sx={{ flexGrow: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -23,7 +23,7 @@ export const Layout = () => {
                 <Tab icon={<Link to="/settings"><SettingsIcon /></Link>} label="Settings" value="settings" />
             </Tabs>
 
-            <Box sx={{ flexGrow: 1, mx: 2, my: 2, overflow: 'auto' }}>
+            <Box sx={{ flexGrow: 1, padding: 2, overflow: 'auto' }}>
                 <Outlet />
             </Box>
         </Paper>
